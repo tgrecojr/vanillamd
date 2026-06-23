@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, symlink, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NoteService, NotFoundError, ConflictError } from './notes.js';
+import { NoteService, NotFoundError, ConflictError, PayloadTooLargeError } from './notes.js';
 import { PathError } from './paths.js';
 
 let root: string;
@@ -61,11 +61,42 @@ describe('NoteService create/move/delete', () => {
     await expect(notes.move('a.md', 'b.md')).rejects.toThrow(ConflictError);
   });
 
+  it('refuses to move a folder into itself or its own subtree', async () => {
+    await notes.writeNote('proj/notes.md', 'x');
+    await expect(notes.move('proj', 'proj')).rejects.toThrow(PathError);
+    await expect(notes.move('proj', 'proj/inner')).rejects.toThrow(PathError);
+  });
+
   it('deletes notes and folders', async () => {
     await notes.writeNote('f/x.md', 'x');
     await notes.deleteNote('f/x.md');
     await notes.deleteFolder('f');
     await expect(notes.deleteFolder('f')).rejects.toThrow(NotFoundError);
+  });
+
+  it('creates notes with owner-only (0600) permissions', async () => {
+    await notes.createNote('perm.md');
+    const info = await stat(join(root, 'perm.md'));
+    expect(info.mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('NoteService size limit', () => {
+  it('rejects content exceeding maxNoteBytes', async () => {
+    const bounded = new NoteService(root, 8);
+    await expect(bounded.writeNote('big.md', '123456789')).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('accepts content at exactly the limit', async () => {
+    const bounded = new NoteService(root, 8);
+    await bounded.writeNote('ok.md', '12345678');
+    expect(await bounded.readNote('ok.md')).toBe('12345678');
+  });
+
+  it('measures the limit in UTF-8 bytes, not characters', async () => {
+    // 'é' is 2 bytes in UTF-8, so four of them exceed a 7-byte limit.
+    const bounded = new NoteService(root, 7);
+    await expect(bounded.writeNote('uni.md', 'éééé')).rejects.toThrow(PayloadTooLargeError);
   });
 });
 
@@ -110,5 +141,14 @@ describe('NoteService security', () => {
     await notes.writeNote('real.md', '');
     const tree = await notes.tree();
     expect(tree.map((n) => n.name)).toEqual(['real.md']);
+  });
+
+  it('blocks a write through an escaping symlink in an intermediate segment', async () => {
+    // The target file does not exist yet, so the symlink-escape check must climb
+    // from the (missing) target up to the symlinked ancestor and reject there.
+    await symlink(outside, join(root, 'link'));
+    await expect(notes.writeNote('link/sub/new.md', 'x')).rejects.toThrow(PathError);
+    // Nothing should have been written outside the root.
+    await expect(stat(join(outside, 'sub', 'new.md'))).rejects.toThrow();
   });
 });

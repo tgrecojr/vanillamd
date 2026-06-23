@@ -25,7 +25,15 @@ function requireString(value: unknown, field: string): string {
   return value;
 }
 
-/** Register all /api routes. Validation of paths happens inside NoteService. */
+/**
+ * Register all /api routes. Validation of paths happens inside NoteService.
+ *
+ * No CSRF token is issued: the app has no auth of its own (Cloudflare Zero Trust
+ * fronts it), and every mutating route requires `Content-Type: application/json`
+ * with no CORS allow-headers set. A cross-site request therefore cannot pass the
+ * preflight, so CSRF stays closed. Do not loosen the JSON/CORS posture without
+ * adding explicit CSRF protection.
+ */
 export function registerRoutes(app: FastifyInstance, notes: NoteService): void {
   app.get('/api/health', async () => ({ status: 'ok' }));
 

@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, readdir, rename, rm, stat, realpath } from 'node:fs/promises';
-import { dirname, join, posix } from 'node:path';
+import { dirname, join, posix, sep } from 'node:path';
 import {
   normalizeLogicalPath,
   resolveWithin,
@@ -33,6 +33,14 @@ export class ConflictError extends Error {
   }
 }
 
+export class PayloadTooLargeError extends Error {
+  readonly statusCode = 413;
+  constructor(message = 'Payload too large') {
+    super(message);
+    this.name = 'PayloadTooLargeError';
+  }
+}
+
 /** Directory and file entry names that are never listed or written. */
 function isHidden(name: string): boolean {
   return name.startsWith('.');
@@ -45,7 +53,23 @@ function isHidden(name: string): boolean {
  * path of the nearest existing ancestor still lives inside the root.
  */
 export class NoteService {
-  constructor(private readonly root: string) {}
+  /**
+   * @param root          Absolute path to the data directory.
+   * @param maxNoteBytes  Maximum UTF-8 byte length accepted for a single note's
+   *                      content. Enforced explicitly here so the guarantee does
+   *                      not depend on Fastify's whole-body limit.
+   */
+  constructor(
+    private readonly root: string,
+    private readonly maxNoteBytes = Number.POSITIVE_INFINITY,
+  ) {}
+
+  /** Reject note content that exceeds the configured byte ceiling. */
+  private assertWithinSizeLimit(content: string): void {
+    if (Buffer.byteLength(content, 'utf8') > this.maxNoteBytes) {
+      throw new PayloadTooLargeError('Note exceeds the maximum allowed size');
+    }
+  }
 
   /** Create the data root if it does not yet exist. */
   async init(): Promise<void> {
@@ -70,7 +94,7 @@ export class NoteService {
     for (;;) {
       try {
         const real = await realpath(cursor);
-        if (real !== realRoot && !real.startsWith(realRoot + '/')) {
+        if (real !== realRoot && !real.startsWith(realRoot + sep)) {
           throw new PathError('Resolved path escapes the data directory');
         }
         return;
@@ -129,6 +153,7 @@ export class NoteService {
   async writeNote(rawPath: string, content: string): Promise<void> {
     const logicalPath = normalizeLogicalPath(rawPath);
     assertMarkdownPath(logicalPath);
+    this.assertWithinSizeLimit(content);
     const absolute = await this.safeAbsolute(logicalPath);
     await mkdir(dirname(absolute), { recursive: true });
     await atomicWrite(absolute, content);
@@ -143,7 +168,7 @@ export class NoteService {
       throw new ConflictError('A note with that name already exists');
     }
     await mkdir(dirname(absolute), { recursive: true });
-    await writeFile(absolute, '', { flag: 'wx' });
+    await writeFile(absolute, '', { flag: 'wx', mode: 0o600 });
     return logicalPath;
   }
 
@@ -164,6 +189,11 @@ export class NoteService {
     const toLogical = normalizeLogicalPath(rawTo);
     // A note path must keep its .md extension; a folder must not gain one.
     if (isMarkdownPath(fromLogical)) assertMarkdownPath(toLogical);
+    // Refuse to move a folder into itself or its own subtree; rename() would
+    // otherwise throw EINVAL and surface as an opaque 500.
+    if (toLogical === fromLogical || toLogical.startsWith(fromLogical + '/')) {
+      throw new PathError('Cannot move a path into itself');
+    }
     const fromAbs = await this.safeAbsolute(fromLogical);
     const toAbs = await this.safeAbsolute(toLogical);
     if (!(await exists(fromAbs))) throw new NotFoundError('Source not found');
