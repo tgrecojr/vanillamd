@@ -76,7 +76,11 @@ describe('HTTP API', () => {
   });
 
   it('recursively deletes a folder and its contents', async () => {
-    await app.inject({ method: 'PUT', url: '/api/note', payload: { path: 'f/g/x.md', content: '' } });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/note',
+      payload: { path: 'f/g/x.md', content: '' },
+    });
 
     const del = await app.inject({ method: 'DELETE', url: '/api/folder?path=f' });
     expect(del.statusCode).toBe(200);
