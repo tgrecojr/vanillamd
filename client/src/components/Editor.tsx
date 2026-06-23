@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Crepe } from '@milkdown/crepe';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
+import { buildToolbar } from './editorToolbar';
 
 interface Props {
   /** Initial markdown for this note. Read once on mount; remount via `key`. */
@@ -24,7 +25,13 @@ export function Editor({ initialValue, onChange }: Props): React.JSX.Element {
     const host = hostRef.current;
     if (!host) return;
 
-    const crepe = new Crepe({ root: host, defaultValue: initialRef.current });
+    const crepe = new Crepe({
+      root: host,
+      defaultValue: initialRef.current,
+      featureConfigs: {
+        [Crepe.Feature.Toolbar]: { buildToolbar },
+      },
+    });
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(markdown);
