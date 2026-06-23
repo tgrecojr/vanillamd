@@ -1,0 +1,21 @@
+services:
+  vanillamd:
+    build: .
+    image: vanillamd:latest
+    container_name: vanillamd
+    restart: unless-stopped
+    # Bind to localhost only: expose the app to the internet exclusively
+    # through Cloudflare Zero Trust (or another authenticating proxy).
+    ports:
+      - '127.0.0.1:8080:8080'
+    environment:
+      DATA_DIR: /data
+      PORT: '8080'
+      LOG_LEVEL: info
+    volumes:
+      - ./data:/data
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp

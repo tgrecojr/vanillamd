@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":disableRateLimiting",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "docker:enableMajor",
+    ":timezone(America/New_York)"
+  ],
+  "schedule": ["after 10pm every weekday", "before 5am every weekday", "every weekend"],
+  "prConcurrentLimit": 3,
+  "prCreation": "immediate",
+  "rebaseWhen": "behind-base-branch",
+  "automerge": true,
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "Pin all Docker base images by digest for reproducible builds.",
+      "matchCategories": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "description": "Keep the Chainguard builder (node:latest-dev) and runtime (node:latest) in lockstep — one PR, never desynced, so the paired Node major / native ABI invariant holds.",
+      "matchDepNames": ["cgr.dev/chainguard/node"],
+      "groupName": "chainguard node base images",
+      "groupSlug": "chainguard-node-base"
+    },
+    {
+      "description": "Auto-merge non-major Docker updates (Chainguard tags float on :latest, so these are effectively digest bumps).",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "description": "Group all minor and patch updates together.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch",
+      "automerge": true
+    },
+    {
+      "description": "Disable auto-merge for major updates - need review.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["major-update"]
+    },
+    {
+      "description": "Auto-merge digest updates at any time.",
+      "matchUpdateTypes": ["digest"],
+      "automerge": true,
+      "schedule": ["at any time"],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "Stability period for minor/patch before auto-merge.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "minimumReleaseAge": "3 days"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on monday"]
+  }
+}
