@@ -57,6 +57,36 @@ describe('HTTP API', () => {
     expect(body.tree[0]).toMatchObject({ name: 'work', type: 'folder' });
   });
 
+  it('moves a note via /api/move', async () => {
+    await app.inject({ method: 'POST', url: '/api/note', payload: { path: 'a.md' } });
+    await app.inject({ method: 'PUT', url: '/api/note', payload: { path: 'a.md', content: 'hi' } });
+
+    const move = await app.inject({
+      method: 'POST',
+      url: '/api/move',
+      payload: { from: 'a.md', to: 'sub/b.md' },
+    });
+    expect(move.statusCode).toBe(200);
+    expect(move.json()).toEqual({ path: 'sub/b.md' });
+
+    const read = await app.inject({ method: 'GET', url: '/api/note?path=sub%2Fb.md' });
+    expect(read.json()).toEqual({ content: 'hi' });
+    const gone = await app.inject({ method: 'GET', url: '/api/note?path=a.md' });
+    expect(gone.statusCode).toBe(404);
+  });
+
+  it('recursively deletes a folder and its contents', async () => {
+    await app.inject({ method: 'PUT', url: '/api/note', payload: { path: 'f/g/x.md', content: '' } });
+
+    const del = await app.inject({ method: 'DELETE', url: '/api/folder?path=f' });
+    expect(del.statusCode).toBe(200);
+
+    const read = await app.inject({ method: 'GET', url: '/api/note?path=f%2Fg%2Fx.md' });
+    expect(read.statusCode).toBe(404);
+    const reDel = await app.inject({ method: 'DELETE', url: '/api/folder?path=f' });
+    expect(reDel.statusCode).toBe(404);
+  });
+
   it('rejects a traversal attempt with 400', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -84,5 +114,31 @@ describe('HTTP API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ error: expect.any(String) });
+  });
+
+  it('rejects a note write larger than maxNoteBytes with 413', async () => {
+    // Build a dedicated app with a tiny note ceiling. The Fastify body limit is
+    // maxNoteBytes + 64 KiB, so a payload above maxNoteBytes but below that still
+    // reaches NoteService, exercising the explicit size check (not the body cap).
+    const smallDir = await mkdtemp(join(tmpdir(), 'vanillamd-small-'));
+    const small = await buildApp({
+      dataDir: smallDir,
+      clientDir: join(smallDir, '__no_client__'),
+      port: 0,
+      host: '127.0.0.1',
+      maxNoteBytes: 16,
+      logLevel: 'silent',
+    });
+    try {
+      const res = await small.inject({
+        method: 'PUT',
+        url: '/api/note',
+        payload: { path: 'big.md', content: 'x'.repeat(64) },
+      });
+      expect(res.statusCode).toBe(413);
+    } finally {
+      await small.close();
+      await rm(smallDir, { recursive: true, force: true });
+    }
   });
 });

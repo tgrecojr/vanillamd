@@ -18,6 +18,10 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.logLevel },
     bodyLimit: config.maxNoteBytes + 64 * 1024,
+    // trustProxy honours X-Forwarded-* so logs show the real client IP. This is
+    // only safe because the container port is never exposed directly: it sits
+    // behind the Cloudflare tunnel/Zero Trust proxy. If the port is ever made
+    // publicly reachable, forwarded headers become spoofable — keep it private.
     trustProxy: true,
   });
 
@@ -42,7 +46,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     crossOriginEmbedderPolicy: false,
   });
 
-  const notes = new NoteService(config.dataDir);
+  const notes = new NoteService(config.dataDir, config.maxNoteBytes);
   await notes.init();
   registerRoutes(app, notes);
 
