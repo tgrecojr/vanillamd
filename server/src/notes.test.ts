@@ -100,6 +100,80 @@ describe('NoteService size limit', () => {
   });
 });
 
+describe('NoteService aggregate quota', () => {
+  /** maxNoteBytes 1 KiB, aggregate 4 KiB, at most 6 entries. */
+  const bounded = async (): Promise<NoteService> => {
+    const svc = new NoteService(root, 1024, 4096, 6);
+    await svc.init();
+    return svc;
+  };
+
+  it('rejects writes that individually pass but collectively exceed the ceiling', async () => {
+    const svc = await bounded();
+    const kib = 'x'.repeat(1024);
+    for (let i = 0; i < 4; i++) {
+      await svc.writeNote(`n${i}.md`, kib);
+    }
+    await expect(svc.writeNote('n4.md', kib)).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('rejects creation past the entry ceiling', async () => {
+    const svc = await bounded();
+    for (let i = 0; i < 6; i++) {
+      await svc.createNote(`e${i}.md`);
+    }
+    await expect(svc.createNote('e6.md')).rejects.toThrow(PayloadTooLargeError);
+    await expect(svc.createFolder('extra')).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('frees budget when notes are deleted', async () => {
+    const svc = await bounded();
+    const kib = 'x'.repeat(1024);
+    for (let i = 0; i < 4; i++) {
+      await svc.writeNote(`n${i}.md`, kib);
+    }
+    await expect(svc.writeNote('n4.md', kib)).rejects.toThrow(PayloadTooLargeError);
+    await svc.deleteNote('n0.md');
+    await svc.writeNote('n4.md', kib);
+    expect(await svc.readNote('n4.md')).toBe(kib);
+  });
+
+  it('charges the folders a nested write implicitly creates', async () => {
+    // mkdir(recursive) can create several real entries for one write. Charging
+    // only the leaf would make deep nesting a free entry-quota bypass.
+    const svc = new NoteService(root, 1024, 1024 * 1024, 6);
+    await svc.init();
+    // 'a/b/c/n.md' costs 4 entries: a, b, c and the note itself.
+    await svc.writeNote('a/b/c/n.md', 'x');
+    // Only 2 of the 6-entry budget remain, so a second deep path must not fit.
+    await expect(svc.writeNote('d/e/f/n.md', 'x')).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('charges the folders a nested createFolder implicitly creates', async () => {
+    const svc = new NoteService(root, 1024, 1024 * 1024, 4);
+    await svc.init();
+    await svc.createFolder('p/q/r'); // 3 entries
+    await svc.createNote('s.md'); // 4th
+    await expect(svc.createNote('t.md')).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('charges an overwrite as a delta, not a fresh allocation', async () => {
+    const svc = await bounded();
+    await svc.writeNote('a.md', 'x'.repeat(1024));
+    for (let i = 0; i < 10; i++) {
+      await svc.writeNote('a.md', 'y'.repeat(1024));
+    }
+    expect(await svc.readNote('a.md')).toBe('y'.repeat(1024));
+  });
+
+  it('is unbounded by default so existing deployments keep working', async () => {
+    for (let i = 0; i < 30; i++) {
+      await notes.writeNote(`free/n${i}.md`, 'x'.repeat(2048));
+    }
+    expect(await notes.readNote('free/n29.md')).toBe('x'.repeat(2048));
+  });
+});
+
 describe('NoteService tree', () => {
   it('lists folders first, then notes, alphabetically, hiding dotfiles', async () => {
     await notes.writeNote('zeta.md', '');
