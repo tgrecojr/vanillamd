@@ -11,7 +11,7 @@ export class PathError extends Error {
 
 const MAX_SEGMENT_LENGTH = 255;
 const MAX_PATH_LENGTH = 1024;
-const MAX_DEPTH = 40;
+export const MAX_DEPTH = 40;
 
 // Illegal characters inside a single path segment. We use a denylist (rather
 // than an allowlist) so note/folder titles can contain unicode, but still

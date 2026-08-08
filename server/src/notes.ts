@@ -6,6 +6,7 @@ import {
   resolveWithin,
   assertMarkdownPath,
   isMarkdownPath,
+  MAX_DEPTH,
   PathError,
 } from './paths.js';
 
@@ -206,9 +207,18 @@ export class NoteService {
     return this.readDir('');
   }
 
-  private async readDir(logicalDir: string): Promise<TreeNode[]> {
+  private async readDir(logicalDir: string, depth = 0): Promise<TreeNode[]> {
+    // A tree deeper than MAX_DEPTH can only pre-date the move() bound below or
+    // have been planted directly on the volume. Truncate rather than recurse
+    // into it: an unreadable branch must not take the whole listing down.
+    if (depth >= MAX_DEPTH) return [];
     const absolute = logicalDir === '' ? this.root : await this.safeAbsolute(logicalDir);
-    const entries = await readdir(absolute, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(absolute, { withFileTypes: true });
+    } catch {
+      return [];
+    }
     const nodes: TreeNode[] = [];
 
     for (const entry of entries) {
@@ -220,7 +230,7 @@ export class NoteService {
           name: entry.name,
           path: childPath,
           type: 'folder',
-          children: await this.readDir(childPath),
+          children: await this.readDir(childPath, depth + 1),
         });
       } else if (entry.isFile() && isMarkdownPath(entry.name)) {
         nodes.push({ name: entry.name, path: childPath, type: 'note' });
@@ -364,6 +374,15 @@ export class NoteService {
       assertMarkdownPath(fromLogical);
       assertMarkdownPath(toLogical);
     }
+    // normalizeLogicalPath bounds each request to MAX_DEPTH, but move() grafts
+    // a whole subtree beneath a fresh destination: both operands stay legal
+    // while the physical tree grows by the destination's depth every time.
+    // Bound the composed result, or repeated moves push the deepest path past
+    // the OS PATH_MAX and readdir() kills GET /api/tree for good.
+    const composedDepth = toLogical.split('/').length + (await subtreeDepth(fromAbs, MAX_DEPTH));
+    if (composedDepth > MAX_DEPTH) {
+      throw new PathError('Move would nest the tree too deeply');
+    }
     if (await exists(toAbs)) throw new ConflictError('Destination already exists');
     await mkdir(dirname(toAbs), { recursive: true });
     await rename(fromAbs, toAbs);
@@ -427,6 +446,35 @@ async function measureSubtree(absolute: string): Promise<{ bytes: number; entrie
   };
   await walk(absolute);
   return { bytes, entries };
+}
+
+/**
+ * Levels of nesting below `absolute` — 0 for a file or an empty folder. Stops
+ * descending once `cap` is exceeded, so measuring an already-deep tree stays
+ * cheap and can never itself hit the path-length ceiling.
+ */
+async function subtreeDepth(absolute: string, cap: number): Promise<number> {
+  const info = await statOrNull(absolute);
+  if (!info?.isDirectory()) return 0;
+
+  let deepest = 0;
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (deepest > cap) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (depth + 1 > deepest) deepest = depth + 1;
+      if (deepest > cap) return;
+      if (entry.isDirectory()) await walk(join(dir, entry.name), depth + 1);
+    }
+  };
+  await walk(absolute, 0);
+  return deepest;
 }
 
 async function statOrNull(absolute: string): Promise<Awaited<ReturnType<typeof stat>> | null> {

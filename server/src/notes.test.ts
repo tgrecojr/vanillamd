@@ -3,7 +3,10 @@ import { mkdtemp, rm, mkdir, writeFile, readFile, symlink, stat, readdir } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NoteService, NotFoundError, ConflictError, PayloadTooLargeError } from './notes.js';
-import { PathError } from './paths.js';
+import { MAX_DEPTH, PathError } from './paths.js';
+
+const chain = (prefix: string, n: number): string =>
+  Array.from({ length: n }, (_, i) => `${prefix}${i}`).join('/');
 
 let root: string;
 let outside: string;
@@ -226,6 +229,52 @@ describe('NoteService aggregate quota', () => {
       await notes.writeNote(`free/n${i}.md`, 'x'.repeat(2048));
     }
     expect(await notes.readNote('free/n29.md')).toBe('x'.repeat(2048));
+  });
+});
+
+describe('NoteService composed depth', () => {
+  it('refuses a move that would nest the tree past MAX_DEPTH', async () => {
+    // Both operands are individually legal; only the grafted result is not.
+    await notes.createFolder(`base/${chain('l', MAX_DEPTH - 1)}`);
+    await expect(notes.move('base', `${chain('g', MAX_DEPTH - 1)}/base`)).rejects.toThrow(
+      PathError,
+    );
+    // The listing must survive the rejected move.
+    const tree = await notes.tree();
+    expect(tree.some((n) => n.name === 'base')).toBe(true);
+  });
+
+  it('refuses repeated moves that each look legal but compose unbounded depth', async () => {
+    await notes.createFolder(`base/${chain('l', MAX_DEPTH - 1)}`);
+    let top = 'base';
+    let rejected = false;
+    for (let i = 1; i <= 5; i++) {
+      try {
+        await notes.move(top, `${chain(`g${i}_`, MAX_DEPTH - 1)}/${top}`);
+        top = `g${i}_0`;
+      } catch (err) {
+        expect(err).toBeInstanceOf(PathError);
+        rejected = true;
+        break;
+      }
+    }
+    expect(rejected).toBe(true);
+    await expect(notes.tree()).resolves.toBeDefined();
+  });
+
+  it('still allows a deep subtree to move somewhere shallower', async () => {
+    await notes.createFolder(`deep/${chain('l', 10)}`);
+    await notes.writeNote(`deep/${chain('l', 10)}/leaf.md`, 'data');
+    await notes.move('deep', 'moved');
+    expect(await notes.readNote(`moved/${chain('l', 10)}/leaf.md`)).toBe('data');
+  });
+
+  it('truncates instead of throwing when a tree deeper than MAX_DEPTH exists', async () => {
+    // Planted out of band — a co-tenant on the bind mount, or before this fix.
+    await mkdir(join(root, chain('d', MAX_DEPTH + 20)), { recursive: true });
+    await notes.writeNote('visible.md', 'x');
+    const tree = await notes.tree();
+    expect(tree.some((n) => n.name === 'visible.md')).toBe(true);
   });
 });
 
