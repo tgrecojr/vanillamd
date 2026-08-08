@@ -9,17 +9,25 @@ import type { Config } from './config.js';
 let app: FastifyInstance;
 let dataDir: string;
 
-beforeEach(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'vanillamd-app-'));
-  const config: Config = {
-    dataDir,
-    clientDir: join(dataDir, '__no_client__'),
+/** A complete Config for a throwaway app rooted at `dir`. */
+function baseConfig(dir: string): Config {
+  return {
+    dataDir: dir,
+    clientDir: join(dir, '__no_client__'),
     port: 0,
     host: '127.0.0.1',
     maxNoteBytes: 1024 * 1024,
     logLevel: 'silent',
+    requestTimeoutMs: 300_000,
+    maxConnections: 512,
+    rateLimitMax: 1000,
+    rateLimitWindowMs: 60_000,
   };
-  app = await buildApp(config);
+}
+
+beforeEach(async () => {
+  dataDir = await mkdtemp(join(tmpdir(), 'vanillamd-app-'));
+  app = await buildApp(baseConfig(dataDir));
 });
 
 afterEach(async () => {
@@ -120,6 +128,35 @@ describe('HTTP API', () => {
     expect(res.json()).toMatchObject({ error: expect.any(String) });
   });
 
+  it('bounds request duration, socket count and request rate', async () => {
+    // Fastify defaults requestTimeout to 0, which overrides Node's own 300s
+    // ceiling, and nothing capped sockets or request volume.
+    expect(app.server.requestTimeout).toBeGreaterThan(0);
+    expect(app.server.maxConnections).toBeGreaterThan(0);
+
+    const limitedDir = await mkdtemp(join(tmpdir(), 'vanillamd-rl-'));
+    const limited = await buildApp({
+      ...baseConfig(limitedDir),
+      rateLimitMax: 5,
+      rateLimitWindowMs: 60_000,
+    });
+    try {
+      let rejected = 0;
+      for (let i = 0; i < 20; i++) {
+        const res = await limited.inject({
+          method: 'GET',
+          url: '/api/health',
+          remoteAddress: '203.0.113.9',
+        });
+        if (res.statusCode === 429) rejected++;
+      }
+      expect(rejected).toBeGreaterThan(0);
+    } finally {
+      await limited.close();
+      await rm(limitedDir, { recursive: true, force: true });
+    }
+  });
+
   it('never serves a source map, and the build does not emit one', async () => {
     // Maps carry `sourcesContent` — the verbatim TypeScript of the client —
     // and dist/ is served unauthenticated, so both halves must hold.
@@ -131,14 +168,7 @@ describe('HTTP API', () => {
       join(mapDir, 'assets', 'app.js.map'),
       JSON.stringify({ version: 3, sourcesContent: ['const SECRET = 1;'], mappings: 'AAAA' }),
     );
-    const withMaps = await buildApp({
-      dataDir: mapDir,
-      clientDir: mapDir,
-      port: 0,
-      host: '127.0.0.1',
-      maxNoteBytes: 1024,
-      logLevel: 'silent',
-    });
+    const withMaps = await buildApp({ ...baseConfig(mapDir), clientDir: mapDir });
     try {
       const map = await withMaps.inject({ method: 'GET', url: '/assets/app.js.map' });
       expect(map.statusCode).toBe(404);
@@ -164,14 +194,7 @@ describe('HTTP API', () => {
     // maxNoteBytes + 64 KiB, so a payload above maxNoteBytes but below that still
     // reaches NoteService, exercising the explicit size check (not the body cap).
     const smallDir = await mkdtemp(join(tmpdir(), 'vanillamd-small-'));
-    const small = await buildApp({
-      dataDir: smallDir,
-      clientDir: join(smallDir, '__no_client__'),
-      port: 0,
-      host: '127.0.0.1',
-      maxNoteBytes: 16,
-      logLevel: 'silent',
-    });
+    const small = await buildApp({ ...baseConfig(smallDir), maxNoteBytes: 16 });
     try {
       const res = await small.inject({
         method: 'PUT',

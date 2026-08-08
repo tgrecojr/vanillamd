@@ -11,6 +11,17 @@ export interface Config {
   logLevel: string;
   /** Absolute path to the built client assets, served as static files. */
   clientDir: string;
+  /**
+   * Milliseconds a single request may take before the socket is reclaimed.
+   * Fastify defaults this to 0, which disables Node's own 300 s ceiling.
+   */
+  requestTimeoutMs: number;
+  /** Maximum concurrent sockets the server will hold open. */
+  maxConnections: number;
+  /** Requests allowed per client per `rateLimitWindowMs`. */
+  rateLimitMax: number;
+  /** Width of the rate-limit window, in milliseconds. */
+  rateLimitWindowMs: number;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -37,5 +48,11 @@ export function loadConfig(): Config {
     host: process.env.HOST ?? '0.0.0.0',
     maxNoteBytes: intFromEnv('MAX_NOTE_BYTES', 5 * 1024 * 1024),
     logLevel: process.env.LOG_LEVEL ?? 'info',
+    // Restores the ceiling Node applies by default and Fastify removes.
+    requestTimeoutMs: intFromEnv('REQUEST_TIMEOUT_MS', 300_000),
+    maxConnections: intFromEnv('MAX_CONNECTIONS', 512),
+    // Generous for a single-user app whose editor autosaves on a debounce.
+    rateLimitMax: intFromEnv('RATE_LIMIT_MAX', 300),
+    rateLimitWindowMs: intFromEnv('RATE_LIMIT_WINDOW_MS', 60_000),
   };
 }

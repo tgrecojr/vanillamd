@@ -5,6 +5,7 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
@@ -23,9 +24,22 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     // behind the Cloudflare tunnel/Zero Trust proxy. If the port is ever made
     // publicly reachable, forwarded headers become spoofable — keep it private.
     trustProxy: true,
+    // Fastify defaults requestTimeout to 0, which overrides Node's own 300 s
+    // ceiling and lets a client hold a socket (and its buffers) forever.
+    requestTimeout: config.requestTimeoutMs,
   });
 
+  // Bound how many such sockets can be held at once.
+  app.server.maxConnections = config.maxConnections;
+
   await app.register(sensible);
+
+  // Bound request volume per client, so the connection budget cannot be
+  // consumed by a flood of individually well-formed requests.
+  await app.register(rateLimit, {
+    max: config.rateLimitMax,
+    timeWindow: config.rateLimitWindowMs,
+  });
 
   // Security headers. We relax style-src because ProseMirror/Milkdown inject
   // inline styles; scripts and everything else stay locked to same-origin.
