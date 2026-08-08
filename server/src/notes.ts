@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, readdir, rename, rm, stat, realpath } from 'node:fs/promises';
-import { dirname, join, posix, sep } from 'node:path';
+import { dirname, join, posix, resolve, sep } from 'node:path';
 import {
   normalizeLogicalPath,
   resolveWithin,
@@ -140,6 +140,23 @@ export class NoteService {
     usage.entries += deltaEntries;
   }
 
+  /**
+   * How many parent directories `mkdir(..., { recursive: true })` would have
+   * to create for `absolute`. Those all become real entries on disk, so they
+   * must be charged too — otherwise deep nesting is a free entry-quota bypass.
+   */
+  private async countMissingAncestors(absolute: string): Promise<number> {
+    const stop = resolve(this.root);
+    let cursor = dirname(absolute);
+    let missing = 0;
+    while (cursor !== stop && cursor.startsWith(stop + sep)) {
+      if (await exists(cursor)) break;
+      missing++;
+      cursor = dirname(cursor);
+    }
+    return missing;
+  }
+
   /** Give budget back after a delete. */
   private release(bytes: number, entries: number): void {
     if (this.quotaDisabled || !this.usage) return;
@@ -235,7 +252,8 @@ export class NoteService {
     // Charge only the delta: rewriting a note at the same size costs nothing.
     const existing = await statOrNull(absolute);
     const deltaBytes = Buffer.byteLength(content, 'utf8') - Number(existing?.size ?? 0);
-    await this.reserve(deltaBytes, existing ? 0 : 1);
+    const newAncestors = this.quotaDisabled ? 0 : await this.countMissingAncestors(absolute);
+    await this.reserve(deltaBytes, (existing ? 0 : 1) + newAncestors);
 
     await mkdir(dirname(absolute), { recursive: true });
     await atomicWrite(absolute, content);
@@ -249,7 +267,10 @@ export class NoteService {
     if (await exists(absolute)) {
       throw new ConflictError('A note with that name already exists');
     }
-    await this.reserve(0, 1);
+    await this.reserve(
+      0,
+      1 + (this.quotaDisabled ? 0 : await this.countMissingAncestors(absolute)),
+    );
     await mkdir(dirname(absolute), { recursive: true });
     await writeFile(absolute, '', { flag: 'wx', mode: 0o600 });
     return logicalPath;
@@ -262,7 +283,10 @@ export class NoteService {
     if (await exists(absolute)) {
       throw new ConflictError('A folder with that name already exists');
     }
-    await this.reserve(0, 1);
+    await this.reserve(
+      0,
+      1 + (this.quotaDisabled ? 0 : await this.countMissingAncestors(absolute)),
+    );
     await mkdir(absolute, { recursive: true });
     return logicalPath;
   }

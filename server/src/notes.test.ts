@@ -138,6 +138,25 @@ describe('NoteService aggregate quota', () => {
     expect(await svc.readNote('n4.md')).toBe(kib);
   });
 
+  it('charges the folders a nested write implicitly creates', async () => {
+    // mkdir(recursive) can create several real entries for one write. Charging
+    // only the leaf would make deep nesting a free entry-quota bypass.
+    const svc = new NoteService(root, 1024, 1024 * 1024, 6);
+    await svc.init();
+    // 'a/b/c/n.md' costs 4 entries: a, b, c and the note itself.
+    await svc.writeNote('a/b/c/n.md', 'x');
+    // Only 2 of the 6-entry budget remain, so a second deep path must not fit.
+    await expect(svc.writeNote('d/e/f/n.md', 'x')).rejects.toThrow(PayloadTooLargeError);
+  });
+
+  it('charges the folders a nested createFolder implicitly creates', async () => {
+    const svc = new NoteService(root, 1024, 1024 * 1024, 4);
+    await svc.init();
+    await svc.createFolder('p/q/r'); // 3 entries
+    await svc.createNote('s.md'); // 4th
+    await expect(svc.createNote('t.md')).rejects.toThrow(PayloadTooLargeError);
+  });
+
   it('charges an overwrite as a delta, not a fresh allocation', async () => {
     const svc = await bounded();
     await svc.writeNote('a.md', 'x'.repeat(1024));
