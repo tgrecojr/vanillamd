@@ -43,8 +43,25 @@ describe('markdown URL scheme allowlist', () => {
     );
   });
 
-  it('is wired into the editor, not just defined', async () => {
+  it('treats a scheme-relative URL as an ordinary external link', () => {
+    // `//evil.com` resolves to https://evil.com. That is exactly what an
+    // explicit https:// link would do, and external links are permitted by
+    // design, so this is intentional rather than a bypass. Pinned so a future
+    // change to the allowlist has to decide about it deliberately.
+    expect(sanitizeUrl('//example.com/page')).toBe('//example.com/page');
+  });
+
+  it('is wired into the editor through the document-level sanitizer', async () => {
+    // Asserting only that Editor.tsx mentions the sanitizer would pass even
+    // against wiring that has no effect, which is how the first attempt at this
+    // fix slipped through. The behavioural proof lives in
+    // urlSanitizerPlugin.test.ts; this just pins the wiring's shape.
     const editor = await readFile(resolve(import.meta.dirname, 'components/Editor.tsx'), 'utf8');
-    expect(editor).toContain('sanitizeUrl');
+    expect(editor).toContain('sanitizeDocUrls');
+    expect(editor).toContain('appendTransaction');
+    // The attr-only override is inert against the commonmark preset's toDOM
+    // spread — it must not come back.
+    expect(editor).not.toContain('linkAttr.key');
+    expect(editor).not.toContain('imageAttr.key');
   });
 });

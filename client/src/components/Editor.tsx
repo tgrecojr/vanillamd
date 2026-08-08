@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Crepe } from '@milkdown/crepe';
-import { linkAttr, imageAttr } from '@milkdown/kit/preset/commonmark';
+import { $prose } from '@milkdown/kit/utils';
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import { buildToolbar } from './editorToolbar';
-import { sanitizeUrl } from '../urlSafety';
+import { sanitizeDocUrls } from '../urlSanitizerPlugin';
 
 interface Props {
   /** Initial markdown for this note. Read once on mount; remount via `key`. */
@@ -35,15 +36,27 @@ export function Editor({ initialValue, onChange }: Props): React.JSX.Element {
       },
     });
     // Note bodies are arbitrary markdown, so their link/image URLs are
-    // untrusted input to the DOM. Hold them to a scheme allowlist here — once,
-    // at the render sink — so the CSP is a second layer rather than the only
-    // thing preventing a javascript: URL from executing.
-    crepe.editor.config((ctx) => {
-      ctx.set(linkAttr.key, (node) => ({ href: sanitizeUrl(node.attrs.href as string) }));
-      ctx.set(imageAttr.key, (node) => ({
-        src: sanitizeUrl(node.attrs.src as string, { kind: 'image' }),
-      }));
-    });
+    // untrusted input to the DOM. Hold them to a scheme allowlist so the CSP is
+    // a second layer rather than the only thing preventing a javascript: URL
+    // from executing.
+    //
+    // This sanitizes the document model rather than the rendered attributes.
+    // The commonmark preset spreads a mark's raw attrs into its DOM output
+    // AFTER the configured attribute getter, so overriding that getter is
+    // silently discarded one property later. Rewriting the model is what makes
+    // the spread carry a safe value.
+    crepe.editor.use(
+      $prose(
+        () =>
+          new Plugin({
+            key: new PluginKey('vanillamd-url-sanitizer'),
+            appendTransaction: (_transactions, _oldState, newState) => {
+              const tr = newState.tr;
+              return sanitizeDocUrls(newState.doc, tr) ? tr : null;
+            },
+          }),
+      ),
+    );
 
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
