@@ -19,11 +19,10 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.logLevel },
     bodyLimit: config.maxNoteBytes + 64 * 1024,
-    // trustProxy honours X-Forwarded-* so logs show the real client IP. This is
-    // only safe because the container port is never exposed directly: it sits
-    // behind the Cloudflare tunnel/Zero Trust proxy. If the port is ever made
-    // publicly reachable, forwarded headers become spoofable — keep it private.
-    trustProxy: true,
+    // Scope proxy trust to the known fronting proxy via TRUST_PROXY. Trusting
+    // every peer would make request.ip — the only client identifier in the
+    // logs — attacker-chosen, so this fails closed when unconfigured.
+    trustProxy: config.trustProxy,
     // Fastify defaults requestTimeout to 0, which overrides Node's own 300 s
     // ceiling and lets a client hold a socket (and its buffers) forever.
     requestTimeout: config.requestTimeoutMs,

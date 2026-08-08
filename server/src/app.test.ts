@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
+import { loadConfig, parseTrustProxy } from './config.js';
 import type { Config } from './config.js';
 
 let app: FastifyInstance;
@@ -22,6 +23,7 @@ function baseConfig(dir: string): Config {
     maxConnections: 512,
     rateLimitMax: 1000,
     rateLimitWindowMs: 60_000,
+    trustProxy: false,
   };
 }
 
@@ -126,6 +128,56 @@ describe('HTTP API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ error: expect.any(String) });
+  });
+
+  it('ignores a forged X-Forwarded-For unless the proxy is trusted', async () => {
+    // request.ip is the only client identifier in the logs, so trusting every
+    // peer would make it attacker-chosen.
+    const peer = '203.0.113.9';
+    const spoofed = '1.2.3.4';
+
+    const probe = async (trustProxy: Config['trustProxy']): Promise<string> => {
+      const dir = await mkdtemp(join(tmpdir(), 'vanillamd-tp-'));
+      const instance = await buildApp({ ...baseConfig(dir), trustProxy });
+      let seen = '';
+      instance.get('/__probe', async (req) => {
+        seen = req.ip;
+        return { ip: req.ip };
+      });
+      await instance.ready();
+      await instance.inject({
+        method: 'GET',
+        url: '/__probe',
+        remoteAddress: peer,
+        headers: { 'x-forwarded-for': spoofed },
+      });
+      await instance.close();
+      await rm(dir, { recursive: true, force: true });
+      return seen;
+    };
+
+    expect(await probe(false)).toBe(peer);
+    // Scoped trust still works — that is the deployment behind the tunnel.
+    expect(await probe([peer])).toBe(spoofed);
+  });
+
+  it('defaults to trusting no proxy', async () => {
+    const previous = process.env.TRUST_PROXY;
+    delete process.env.TRUST_PROXY;
+    try {
+      expect(loadConfig().trustProxy).toBe(false);
+    } finally {
+      if (previous !== undefined) process.env.TRUST_PROXY = previous;
+    }
+  });
+
+  it('parses TRUST_PROXY into hop counts and address lists', () => {
+    expect(parseTrustProxy(undefined)).toBe(false);
+    expect(parseTrustProxy('')).toBe(false);
+    expect(parseTrustProxy('false')).toBe(false);
+    expect(parseTrustProxy('true')).toBe(true);
+    expect(parseTrustProxy('1')).toBe(1);
+    expect(parseTrustProxy('10.0.0.0/8, 192.168.1.1')).toEqual(['10.0.0.0/8', '192.168.1.1']);
   });
 
   it('bounds request duration, socket count and request rate', async () => {

@@ -22,6 +22,33 @@ export interface Config {
   rateLimitMax: number;
   /** Width of the rate-limit window, in milliseconds. */
   rateLimitWindowMs: number;
+  /**
+   * Which peers may set X-Forwarded-*. `false` trusts nobody (the default);
+   * a hop count or a list of proxy addresses/CIDRs scopes trust to the known
+   * fronting proxy. Never `true` by default — request.ip is the only client
+   * identifier in the logs, so trusting any peer makes it attacker-chosen.
+   */
+  trustProxy: boolean | number | string[];
+}
+
+/**
+ * Parse TRUST_PROXY into a Fastify `trustProxy` value. Accepts a hop count
+ * ("1"), a comma-separated address/CIDR list ("10.0.0.0/8, 192.168.1.1"), or
+ * the literals "true"/"false". Anything unset or empty means trust nobody.
+ */
+export function parseTrustProxy(raw: string | undefined): boolean | number | string[] {
+  const value = (raw ?? '').trim();
+  if (value === '' || value === 'false') return false;
+  if (value === 'true') return true;
+
+  const hops = Number.parseInt(value, 10);
+  if (String(hops) === value && hops >= 0) return hops;
+
+  const list = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return list.length > 0 ? list : false;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -54,5 +81,8 @@ export function loadConfig(): Config {
     // Generous for a single-user app whose editor autosaves on a debounce.
     rateLimitMax: intFromEnv('RATE_LIMIT_MAX', 300),
     rateLimitWindowMs: intFromEnv('RATE_LIMIT_WINDOW_MS', 60_000),
+    // Fail closed: a deployment that forgets to configure this logs the real
+    // socket peer rather than a spoofable claim.
+    trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   };
 }
