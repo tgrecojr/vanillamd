@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
 import type { Config } from './config.js';
@@ -118,6 +118,45 @@ describe('HTTP API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ error: expect.any(String) });
+  });
+
+  it('never serves a source map, and the build does not emit one', async () => {
+    // Maps carry `sourcesContent` — the verbatim TypeScript of the client —
+    // and dist/ is served unauthenticated, so both halves must hold.
+    const mapDir = await mkdtemp(join(tmpdir(), 'vanillamd-map-'));
+    await mkdir(join(mapDir, 'assets'), { recursive: true });
+    await writeFile(join(mapDir, 'index.html'), '<!doctype html><html></html>');
+    await writeFile(join(mapDir, 'assets', 'app.js'), 'console.log(1)');
+    await writeFile(
+      join(mapDir, 'assets', 'app.js.map'),
+      JSON.stringify({ version: 3, sourcesContent: ['const SECRET = 1;'], mappings: 'AAAA' }),
+    );
+    const withMaps = await buildApp({
+      dataDir: mapDir,
+      clientDir: mapDir,
+      port: 0,
+      host: '127.0.0.1',
+      maxNoteBytes: 1024,
+      logLevel: 'silent',
+    });
+    try {
+      const map = await withMaps.inject({ method: 'GET', url: '/assets/app.js.map' });
+      expect(map.statusCode).toBe(404);
+      expect(map.body).not.toContain('sourcesContent');
+
+      // Ordinary assets must keep working.
+      const js = await withMaps.inject({ method: 'GET', url: '/assets/app.js' });
+      expect(js.statusCode).toBe(200);
+
+      const viteConfig = await readFile(
+        resolve(import.meta.dirname, '../../client/vite.config.ts'),
+        'utf8',
+      );
+      expect(viteConfig).not.toMatch(/sourcemap:\s*true/);
+    } finally {
+      await withMaps.close();
+      await rm(mapDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects a note write larger than maxNoteBytes with 413', async () => {

@@ -16,6 +16,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Maps carry `sourcesContent` — the verbatim TypeScript of the whole
+    // client — and the server serves dist/ as unauthenticated static assets.
+    sourcemap: false,
   },
 });

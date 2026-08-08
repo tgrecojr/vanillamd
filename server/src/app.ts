@@ -66,6 +66,13 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   return app;
 }
 
+/** True if the request targets a source map, ignoring any query string. */
+function isSourceMapRequest(url: string): boolean {
+  const queryStart = url.indexOf('?');
+  const path = queryStart === -1 ? url : url.slice(0, queryStart);
+  return path.toLowerCase().endsWith('.map');
+}
+
 /** Serve the built SPA and fall back to index.html for client-side routes. */
 async function registerClient(app: FastifyInstance, config: Config): Promise<void> {
   const indexPath = join(config.clientDir, 'index.html');
@@ -76,6 +83,15 @@ async function registerClient(app: FastifyInstance, config: Config): Promise<voi
     );
     return;
   }
+
+  // Defense in depth against VULN-005: the build no longer emits source maps,
+  // but refuse to serve them regardless, so a map that reaches the image by
+  // some other route still isn't retrievable over HTTP.
+  app.addHook('onRequest', async (request, reply) => {
+    if (isSourceMapRequest(request.url)) {
+      await reply.code(404).send({ error: 'Not Found' });
+    }
+  });
 
   await app.register(fastifyStatic, {
     root: config.clientDir,
