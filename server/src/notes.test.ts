@@ -96,6 +96,32 @@ describe('NoteService create/move/delete', () => {
     await expect(notes.move('proj', 'proj/inner')).rejects.toThrow(PathError);
   });
 
+  it('refuses to rename a non-.md file into the note namespace', async () => {
+    // DATA_DIR is a bind mount, so a co-tenant can drop non-note artifacts;
+    // move() must not be a laundering path for them.
+    const secret = 'aws_secret_access_key=AKIAEXAMPLE';
+    await writeFile(join(root, 'dropped.conf'), secret);
+    await expect(notes.move('dropped.conf', 'pwned.md')).rejects.toThrow(PathError);
+    await expect(notes.readNote('pwned.md')).rejects.toThrow(NotFoundError);
+  });
+
+  it('refuses to give a folder a .md suffix', async () => {
+    await notes.createFolder('realfolder');
+    await expect(notes.move('realfolder', 'looksLikeANote.md')).rejects.toThrow(PathError);
+  });
+
+  it('refuses to strip .md off a note', async () => {
+    await notes.writeNote('keep.md', 'data');
+    await expect(notes.move('keep.md', 'stripped')).rejects.toThrow(PathError);
+  });
+
+  it('still renames a folder to another non-.md name', async () => {
+    await notes.createFolder('proj');
+    await notes.writeNote('proj/inner.md', 'x');
+    await notes.move('proj', 'renamed');
+    expect(await notes.readNote('renamed/inner.md')).toBe('x');
+  });
+
   it('deletes notes and folders', async () => {
     await notes.writeNote('f/x.md', 'x');
     await notes.deleteNote('f/x.md');

@@ -351,7 +351,19 @@ export class NoteService {
     }
     const fromAbs = await this.safeAbsolute(fromLogical);
     const toAbs = await this.safeAbsolute(toLogical);
-    if (!(await exists(fromAbs))) throw new NotFoundError('Source not found');
+    const fromInfo = await statOrNull(fromAbs);
+    if (!fromInfo) throw new NotFoundError('Source not found');
+    // Decide the source's kind from what is on disk, not from the name the
+    // client supplied: the note namespace is defined by the .md suffix, so a
+    // regular file may only land on a .md path and a folder may never take one.
+    if (fromInfo.isDirectory()) {
+      if (isMarkdownPath(toLogical)) {
+        throw new PathError('A folder may not be named like a note');
+      }
+    } else {
+      assertMarkdownPath(fromLogical);
+      assertMarkdownPath(toLogical);
+    }
     if (await exists(toAbs)) throw new ConflictError('Destination already exists');
     await mkdir(dirname(toAbs), { recursive: true });
     await rename(fromAbs, toAbs);
