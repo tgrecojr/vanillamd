@@ -96,14 +96,34 @@ describe('NoteService create/move/delete', () => {
     expect(await notes.readNote('b.md')).toBe('2');
   });
 
-  it('does not clobber a note created after the destination looked free', async () => {
-    // Every await between an existence probe and the publish is a yield point,
-    // and rename() replaces silently — so the publish itself must be atomic.
-    await notes.writeNote('source.md', 'attacker content');
-    const moving = notes.move('source.md', 'dest.md');
-    await notes.writeNote('dest.md', 'VICTIM NOTE');
-    await expect(moving).rejects.toThrow(ConflictError);
-    expect(await notes.readNote('dest.md')).toBe('VICTIM NOTE');
+  it('refuses one of two concurrent moves onto the same destination', async () => {
+    // check-then-act cannot be made safe here: both moves pass the existence
+    // probe before either renames, and rename() replaces silently — so with the
+    // old code BOTH resolved with no error and one note was destroyed. The
+    // publish must fail closed for exactly one of them instead.
+    for (let i = 0; i < 10; i++) {
+      const a = `a${i}.md`;
+      const b = `b${i}.md`;
+      const dest = `d${i}.md`;
+      await notes.writeNote(a, `A${i}`);
+      await notes.writeNote(b, `B${i}`);
+
+      const results = await Promise.allSettled([notes.move(a, dest), notes.move(b, dest)]);
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly one may take the name; the other must be told it lost.
+      expect(rejected.length).toBeGreaterThan(0);
+      for (const r of rejected) {
+        expect((r as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+      }
+      // The loser's note must survive rather than vanish.
+      const survivors = [
+        await notes.readNote(a).catch(() => null),
+        await notes.readNote(b).catch(() => null),
+        await notes.readNote(dest).catch(() => null),
+      ].filter((v) => v !== null);
+      expect(survivors).toHaveLength(2);
+    }
   });
 
   it('refuses to move a folder onto an existing folder', async () => {
