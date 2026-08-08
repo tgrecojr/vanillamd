@@ -54,14 +54,26 @@ function isHidden(name: string): boolean {
  */
 export class NoteService {
   /**
-   * @param root          Absolute path to the data directory.
-   * @param maxNoteBytes  Maximum UTF-8 byte length accepted for a single note's
-   *                      content. Enforced explicitly here so the guarantee does
-   *                      not depend on Fastify's whole-body limit.
+   * Running totals for the aggregate ceiling. Computed once by walking the
+   * root on first use, then adjusted incrementally, so the common path costs
+   * no extra stat calls. Advisory: it measures what this service wrote, not
+   * what is actually on the volume.
+   */
+  private usage: { bytes: number; entries: number } | null = null;
+
+  /**
+   * @param root           Absolute path to the data directory.
+   * @param maxNoteBytes   Maximum UTF-8 byte length accepted for a single
+   *                       note's content. Enforced explicitly here so the
+   *                       guarantee does not depend on Fastify's body limit.
+   * @param maxTotalBytes  Aggregate ceiling on stored bytes under the root.
+   * @param maxEntries     Aggregate ceiling on notes plus folders.
    */
   constructor(
     private readonly root: string,
     private readonly maxNoteBytes = Number.POSITIVE_INFINITY,
+    private readonly maxTotalBytes = Number.POSITIVE_INFINITY,
+    private readonly maxEntries = Number.POSITIVE_INFINITY,
   ) {}
 
   /** Reject note content that exceeds the configured byte ceiling. */
@@ -69,6 +81,70 @@ export class NoteService {
     if (Buffer.byteLength(content, 'utf8') > this.maxNoteBytes) {
       throw new PayloadTooLargeError('Note exceeds the maximum allowed size');
     }
+  }
+
+  /** True when neither aggregate ceiling is configured — skip all accounting. */
+  private get quotaDisabled(): boolean {
+    return (
+      this.maxTotalBytes === Number.POSITIVE_INFINITY &&
+      this.maxEntries === Number.POSITIVE_INFINITY
+    );
+  }
+
+  /** Walk the root once to seed the running totals. */
+  private async loadUsage(): Promise<{ bytes: number; entries: number }> {
+    if (this.usage) return this.usage;
+
+    let bytes = 0;
+    let entries = 0;
+    const walk = async (dir: string): Promise<void> => {
+      let found;
+      try {
+        found = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of found) {
+        if (entry.isSymbolicLink()) continue;
+        entries++;
+        const child = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(child);
+        } else if (entry.isFile()) {
+          const info = await statOrNull(child);
+          if (info) bytes += Number(info.size);
+        }
+      }
+    };
+    await walk(this.root);
+
+    this.usage = { bytes, entries };
+    return this.usage;
+  }
+
+  /**
+   * Reserve `deltaBytes` and `deltaEntries` against the aggregate ceiling,
+   * throwing before the write commits if either would be exceeded.
+   */
+  private async reserve(deltaBytes: number, deltaEntries: number): Promise<void> {
+    if (this.quotaDisabled) return;
+    const usage = await this.loadUsage();
+
+    if (usage.bytes + deltaBytes > this.maxTotalBytes) {
+      throw new PayloadTooLargeError('Storage quota exceeded');
+    }
+    if (usage.entries + deltaEntries > this.maxEntries) {
+      throw new PayloadTooLargeError('Too many notes and folders');
+    }
+    usage.bytes += deltaBytes;
+    usage.entries += deltaEntries;
+  }
+
+  /** Give budget back after a delete. */
+  private release(bytes: number, entries: number): void {
+    if (this.quotaDisabled || !this.usage) return;
+    this.usage.bytes = Math.max(0, this.usage.bytes - bytes);
+    this.usage.entries = Math.max(0, this.usage.entries - entries);
   }
 
   /** Create the data root if it does not yet exist. */
@@ -155,6 +231,12 @@ export class NoteService {
     assertMarkdownPath(logicalPath);
     this.assertWithinSizeLimit(content);
     const absolute = await this.safeAbsolute(logicalPath);
+
+    // Charge only the delta: rewriting a note at the same size costs nothing.
+    const existing = await statOrNull(absolute);
+    const deltaBytes = Buffer.byteLength(content, 'utf8') - Number(existing?.size ?? 0);
+    await this.reserve(deltaBytes, existing ? 0 : 1);
+
     await mkdir(dirname(absolute), { recursive: true });
     await atomicWrite(absolute, content);
   }
@@ -167,6 +249,7 @@ export class NoteService {
     if (await exists(absolute)) {
       throw new ConflictError('A note with that name already exists');
     }
+    await this.reserve(0, 1);
     await mkdir(dirname(absolute), { recursive: true });
     await writeFile(absolute, '', { flag: 'wx', mode: 0o600 });
     return logicalPath;
@@ -179,6 +262,7 @@ export class NoteService {
     if (await exists(absolute)) {
       throw new ConflictError('A folder with that name already exists');
     }
+    await this.reserve(0, 1);
     await mkdir(absolute, { recursive: true });
     return logicalPath;
   }
@@ -211,6 +295,7 @@ export class NoteService {
     const info = await statOrNull(absolute);
     if (!info || !info.isFile()) throw new NotFoundError('Note not found');
     await rm(absolute);
+    this.release(Number(info.size), 1);
   }
 
   /** Delete a folder (recursively). */
@@ -219,7 +304,9 @@ export class NoteService {
     const absolute = await this.safeAbsolute(logicalPath);
     const info = await statOrNull(absolute);
     if (!info || !info.isDirectory()) throw new NotFoundError('Folder not found');
+    const freed = this.quotaDisabled ? { bytes: 0, entries: 0 } : await measureSubtree(absolute);
     await rm(absolute, { recursive: true });
+    this.release(freed.bytes, freed.entries + 1);
   }
 }
 
@@ -230,6 +317,33 @@ function byFolderThenName(a: TreeNode, b: TreeNode): number {
 
 async function exists(absolute: string): Promise<boolean> {
   return (await statOrNull(absolute)) !== null;
+}
+
+/** Total bytes and entry count under `absolute`, ignoring symlinks. */
+async function measureSubtree(absolute: string): Promise<{ bytes: number; entries: number }> {
+  let bytes = 0;
+  let entries = 0;
+  const walk = async (dir: string): Promise<void> => {
+    let found;
+    try {
+      found = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of found) {
+      if (entry.isSymbolicLink()) continue;
+      entries++;
+      const child = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(child);
+      } else if (entry.isFile()) {
+        const info = await statOrNull(child);
+        if (info) bytes += Number(info.size);
+      }
+    }
+  };
+  await walk(absolute);
+  return { bytes, entries };
 }
 
 async function statOrNull(absolute: string): Promise<Awaited<ReturnType<typeof stat>> | null> {

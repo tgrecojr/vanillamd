@@ -22,6 +22,10 @@ export interface Config {
   rateLimitMax: number;
   /** Width of the rate-limit window, in milliseconds. */
   rateLimitWindowMs: number;
+  /** Aggregate ceiling on total bytes stored under DATA_DIR. */
+  maxTotalBytes: number;
+  /** Aggregate ceiling on the number of notes plus folders. */
+  maxEntries: number;
   /**
    * Which peers may set X-Forwarded-*. `false` trusts nobody (the default);
    * a hop count or a list of proxy addresses/CIDRs scopes trust to the known
@@ -83,6 +87,10 @@ export function loadConfig(): Config {
     rateLimitWindowMs: intFromEnv('RATE_LIMIT_WINDOW_MS', 60_000),
     // Fail closed: a deployment that forgets to configure this logs the real
     // socket peer rather than a spoofable claim.
+    // Deliberately generous so no existing deployment breaks on upgrade;
+    // operators tighten them per volume.
+    maxTotalBytes: intFromEnv('MAX_TOTAL_BYTES', 1024 * 1024 * 1024),
+    maxEntries: intFromEnv('MAX_ENTRIES', 10_000),
     trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   };
 }

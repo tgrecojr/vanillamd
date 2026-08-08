@@ -59,7 +59,12 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     crossOriginEmbedderPolicy: false,
   });
 
-  const notes = new NoteService(config.dataDir, config.maxNoteBytes);
+  const notes = new NoteService(
+    config.dataDir,
+    config.maxNoteBytes,
+    config.maxTotalBytes,
+    config.maxEntries,
+  );
   await notes.init();
   registerRoutes(app, notes);
 

@@ -23,6 +23,8 @@ function baseConfig(dir: string): Config {
     maxConnections: 512,
     rateLimitMax: 1000,
     rateLimitWindowMs: 60_000,
+    maxTotalBytes: 1024 * 1024 * 1024,
+    maxEntries: 10_000,
     trustProxy: false,
   };
 }
