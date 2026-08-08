@@ -19,6 +19,8 @@ describe('markdown URL scheme allowlist', () => {
     'https://example.com/page',
     'http://example.com/page',
     'mailto:someone@example.com',
+    'tel:+15551234567',
+    'ftp://files.example.com/a.txt',
     '/relative/path.md',
     './sibling.md',
     '../parent.md',

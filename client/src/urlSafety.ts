@@ -11,8 +11,16 @@
 /** Substituted for any URL that fails the allowlist. */
 export const SAFE_FALLBACK_URL = 'about:blank';
 
-/** Schemes permitted on a link. Everything else is replaced. */
-const ALLOWED_LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
+/**
+ * Schemes permitted on a link. Everything else is replaced.
+ *
+ * Deliberately matches @milkdown/preset-commonmark's own SAFE_PROTOCOLS. Since
+ * this sanitizer rewrites the document model, anything it rejects is blanked
+ * before the editor ever sees it — being stricter than the library would
+ * silently break legitimate `tel:`/`ftp:` links in a user's notes without
+ * closing any script-execution vector.
+ */
+const ALLOWED_LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'ftp:']);
 
 /** A leading `scheme:`, per RFC 3986's scheme grammar. */
 const SCHEME_PATTERN = /^([a-z][a-z0-9+.-]*):/i;

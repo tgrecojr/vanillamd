@@ -53,6 +53,48 @@ function renderedAttrs(doc: ReturnType<typeof docWith>) {
   return out;
 }
 
+describe('image vector (still unsanitized upstream)', () => {
+  it('neutralises a javascript: image src that the preset would pass through', () => {
+    // @milkdown/preset-commonmark 7.22.0 added its own sanitizeLinkHref for
+    // link marks, but its image toDOM is still
+    //   ['img', { ...ctx.get(imageAttr.key)(node), ...node.attrs }]
+    // with no src check — the raw attrs win. Sanitizing the model is what
+    // closes the image vector.
+    const imageOnly = new Schema({
+      nodes: {
+        doc: { content: 'block+' },
+        paragraph: { group: 'block', content: 'inline*', toDOM: () => ['p', 0] },
+        text: { group: 'inline' },
+        image: {
+          group: 'inline',
+          inline: true,
+          attrs: { src: {} },
+          // Mirrors the preset's image toDOM exactly: raw attrs spread last.
+          toDOM: (node) => ['img', { src: 'ATTR_GETTER_VALUE', ...node.attrs }],
+        },
+      },
+      marks: {},
+    });
+    const doc = imageOnly.node('doc', null, [
+      imageOnly.node('paragraph', null, [imageOnly.node('image', { src: 'javascript:alert(1)' })]),
+    ]);
+    const state = EditorState.create({ doc, schema: imageOnly });
+    const tr = state.tr;
+    expect(sanitizeDocUrls(state.doc, tr)).toBe(true);
+    const next = state.apply(tr);
+
+    let rendered = '';
+    next.doc.descendants((n) => {
+      if (n.type.name === 'image') {
+        const spec = imageOnly.nodes.image.spec.toDOM!(n) as [string, { src: string }];
+        rendered = spec[1].src;
+      }
+    });
+    expect(rendered).toBe(SAFE_FALLBACK_URL);
+    expect(rendered).not.toContain('javascript:');
+  });
+});
+
 describe('initial document load', () => {
   it('is sanitized by the plugin once a transaction is dispatched', () => {
     // Milkdown mounts the view straight from EditorState.create, and
