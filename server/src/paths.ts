@@ -11,7 +11,7 @@ export class PathError extends Error {
 
 const MAX_SEGMENT_LENGTH = 255;
 const MAX_PATH_LENGTH = 1024;
-const MAX_DEPTH = 40;
+export const MAX_DEPTH = 40;
 
 // Illegal characters inside a single path segment. We use a denylist (rather
 // than an allowlist) so note/folder titles can contain unicode, but still
@@ -62,6 +62,12 @@ export function validateSegment(segment: string): void {
   }
   if (segment === '.' || segment === '..') {
     throw new PathError('Path traversal is not allowed');
+  }
+  // The tree hides dot-prefixed entries, so allowing them here would let a
+  // client create, fill and delete a subtree the UI never renders. Read and
+  // write must agree on what exists.
+  if (segment.startsWith('.')) {
+    throw new PathError('A path segment may not start with a dot');
   }
   if (CONTROL_CHARS.test(segment)) {
     throw new PathError('A path segment contains control characters');

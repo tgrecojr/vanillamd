@@ -1,4 +1,16 @@
-import { mkdir, readFile, writeFile, readdir, rename, rm, stat, realpath } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  readdir,
+  rename,
+  rm,
+  rmdir,
+  link,
+  unlink,
+  stat,
+  realpath,
+} from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, posix, resolve, sep } from 'node:path';
 import {
@@ -6,6 +18,7 @@ import {
   resolveWithin,
   assertMarkdownPath,
   isMarkdownPath,
+  MAX_DEPTH,
   PathError,
 } from './paths.js';
 
@@ -206,9 +219,18 @@ export class NoteService {
     return this.readDir('');
   }
 
-  private async readDir(logicalDir: string): Promise<TreeNode[]> {
+  private async readDir(logicalDir: string, depth = 0): Promise<TreeNode[]> {
+    // A tree deeper than MAX_DEPTH can only pre-date the move() bound below or
+    // have been planted directly on the volume. Truncate rather than recurse
+    // into it: an unreadable branch must not take the whole listing down.
+    if (depth >= MAX_DEPTH) return [];
     const absolute = logicalDir === '' ? this.root : await this.safeAbsolute(logicalDir);
-    const entries = await readdir(absolute, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(absolute, { withFileTypes: true });
+    } catch {
+      return [];
+    }
     const nodes: TreeNode[] = [];
 
     for (const entry of entries) {
@@ -220,7 +242,7 @@ export class NoteService {
           name: entry.name,
           path: childPath,
           type: 'folder',
-          children: await this.readDir(childPath),
+          children: await this.readDir(childPath, depth + 1),
         });
       } else if (entry.isFile() && isMarkdownPath(entry.name)) {
         nodes.push({ name: entry.name, path: childPath, type: 'note' });
@@ -351,10 +373,32 @@ export class NoteService {
     }
     const fromAbs = await this.safeAbsolute(fromLogical);
     const toAbs = await this.safeAbsolute(toLogical);
-    if (!(await exists(fromAbs))) throw new NotFoundError('Source not found');
-    if (await exists(toAbs)) throw new ConflictError('Destination already exists');
+    const fromInfo = await statOrNull(fromAbs);
+    if (!fromInfo) throw new NotFoundError('Source not found');
+    // Decide the source's kind from what is on disk, not from the name the
+    // client supplied: the note namespace is defined by the .md suffix, so a
+    // regular file may only land on a .md path and a folder may never take one.
+    if (fromInfo.isDirectory()) {
+      if (isMarkdownPath(toLogical)) {
+        throw new PathError('A folder may not be named like a note');
+      }
+    } else {
+      assertMarkdownPath(fromLogical);
+      assertMarkdownPath(toLogical);
+    }
+    // normalizeLogicalPath bounds each request to MAX_DEPTH, but move() grafts
+    // a whole subtree beneath a fresh destination: both operands stay legal
+    // while the physical tree grows by the destination's depth every time.
+    // Bound the composed result, or repeated moves push the deepest path past
+    // the OS PATH_MAX and readdir() kills GET /api/tree for good.
+    const composedDepth = toLogical.split('/').length + (await subtreeDepth(fromAbs, MAX_DEPTH));
+    if (composedDepth > MAX_DEPTH) {
+      throw new PathError('Move would nest the tree too deeply');
+    }
+    // Create the parent first so no yield sits between deciding the
+    // destination is free and the act that takes the name.
     await mkdir(dirname(toAbs), { recursive: true });
-    await rename(fromAbs, toAbs);
+    await publishMove(fromAbs, toAbs, fromInfo.isDirectory());
     return toLogical;
   }
 
@@ -415,6 +459,80 @@ async function measureSubtree(absolute: string): Promise<{ bytes: number; entrie
   };
   await walk(absolute);
   return { bytes, entries };
+}
+
+/**
+ * Take the destination name atomically, failing rather than clobbering.
+ *
+ * Check-then-act cannot be made safe here: every await between an exists()
+ * probe and rename() is a yield point, and POSIX rename() silently replaces an
+ * existing file. Node exposes no renameat2(RENAME_NOREPLACE), so this uses the
+ * primitives that do fail on collision — link() for a file, and an exclusive
+ * mkdir() reservation for a directory.
+ */
+async function publishMove(fromAbs: string, toAbs: string, isDirectory: boolean): Promise<void> {
+  if (!isDirectory) {
+    // link() fails EEXIST atomically; the source only disappears once the
+    // destination is safely ours.
+    try {
+      await link(fromAbs, toAbs);
+    } catch (err) {
+      throw asConflict(err);
+    }
+    await unlink(fromAbs);
+    return;
+  }
+
+  try {
+    await mkdir(toAbs);
+  } catch (err) {
+    throw asConflict(err);
+  }
+  try {
+    // Renaming onto our own empty reservation is what POSIX allows here.
+    await rename(fromAbs, toAbs);
+  } catch (err) {
+    await rmdir(toAbs).catch(() => {
+      /* reservation already gone */
+    });
+    throw err;
+  }
+}
+
+function asConflict(err: unknown): Error {
+  if ((err as NodeJS.ErrnoException)?.code === 'EEXIST') {
+    return new ConflictError('Destination already exists');
+  }
+  return err as Error;
+}
+
+/**
+ * Levels of nesting below `absolute` — 0 for a file or an empty folder. Stops
+ * descending once `cap` is exceeded, so measuring an already-deep tree stays
+ * cheap and can never itself hit the path-length ceiling.
+ */
+async function subtreeDepth(absolute: string, cap: number): Promise<number> {
+  const info = await statOrNull(absolute);
+  if (!info?.isDirectory()) return 0;
+
+  let deepest = 0;
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (deepest > cap) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (depth + 1 > deepest) deepest = depth + 1;
+      if (deepest > cap) return;
+      if (entry.isDirectory()) await walk(join(dir, entry.name), depth + 1);
+    }
+  };
+  await walk(absolute, 0);
+  return deepest;
 }
 
 async function statOrNull(absolute: string): Promise<Awaited<ReturnType<typeof stat>> | null> {

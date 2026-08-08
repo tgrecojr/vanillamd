@@ -3,7 +3,10 @@ import { mkdtemp, rm, mkdir, writeFile, readFile, symlink, stat, readdir } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NoteService, NotFoundError, ConflictError, PayloadTooLargeError } from './notes.js';
-import { PathError } from './paths.js';
+import { MAX_DEPTH, PathError } from './paths.js';
+
+const chain = (prefix: string, n: number): string =>
+  Array.from({ length: n }, (_, i) => `${prefix}${i}`).join('/');
 
 let root: string;
 let outside: string;
@@ -88,12 +91,77 @@ describe('NoteService create/move/delete', () => {
     await notes.writeNote('a.md', '1');
     await notes.writeNote('b.md', '2');
     await expect(notes.move('a.md', 'b.md')).rejects.toThrow(ConflictError);
+    // A rejected move must leave both operands intact.
+    expect(await notes.readNote('a.md')).toBe('1');
+    expect(await notes.readNote('b.md')).toBe('2');
+  });
+
+  it('refuses one of two concurrent moves onto the same destination', async () => {
+    // check-then-act cannot be made safe here: both moves pass the existence
+    // probe before either renames, and rename() replaces silently — so with the
+    // old code BOTH resolved with no error and one note was destroyed. The
+    // publish must fail closed for exactly one of them instead.
+    for (let i = 0; i < 10; i++) {
+      const a = `a${i}.md`;
+      const b = `b${i}.md`;
+      const dest = `d${i}.md`;
+      await notes.writeNote(a, `A${i}`);
+      await notes.writeNote(b, `B${i}`);
+
+      const results = await Promise.allSettled([notes.move(a, dest), notes.move(b, dest)]);
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly one may take the name; the other must be told it lost.
+      expect(rejected.length).toBeGreaterThan(0);
+      for (const r of rejected) {
+        expect((r as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+      }
+      // The loser's note must survive rather than vanish.
+      const survivors = [
+        await notes.readNote(a).catch(() => null),
+        await notes.readNote(b).catch(() => null),
+        await notes.readNote(dest).catch(() => null),
+      ].filter((v) => v !== null);
+      expect(survivors).toHaveLength(2);
+    }
+  });
+
+  it('refuses to move a folder onto an existing folder', async () => {
+    await notes.createFolder('one');
+    await notes.createFolder('two');
+    await expect(notes.move('one', 'two')).rejects.toThrow(ConflictError);
   });
 
   it('refuses to move a folder into itself or its own subtree', async () => {
     await notes.writeNote('proj/notes.md', 'x');
     await expect(notes.move('proj', 'proj')).rejects.toThrow(PathError);
     await expect(notes.move('proj', 'proj/inner')).rejects.toThrow(PathError);
+  });
+
+  it('refuses to rename a non-.md file into the note namespace', async () => {
+    // DATA_DIR is a bind mount, so a co-tenant can drop non-note artifacts;
+    // move() must not be a laundering path for them.
+    const secret = 'aws_secret_access_key=AKIAEXAMPLE';
+    await writeFile(join(root, 'dropped.conf'), secret);
+    await expect(notes.move('dropped.conf', 'pwned.md')).rejects.toThrow(PathError);
+    await expect(notes.readNote('pwned.md')).rejects.toThrow(NotFoundError);
+  });
+
+  it('refuses to give a folder a .md suffix', async () => {
+    await notes.createFolder('realfolder');
+    await expect(notes.move('realfolder', 'looksLikeANote.md')).rejects.toThrow(PathError);
+  });
+
+  it('refuses to strip .md off a note', async () => {
+    await notes.writeNote('keep.md', 'data');
+    await expect(notes.move('keep.md', 'stripped')).rejects.toThrow(PathError);
+  });
+
+  it('still renames a folder to another non-.md name', async () => {
+    await notes.createFolder('proj');
+    await notes.writeNote('proj/inner.md', 'x');
+    await notes.move('proj', 'renamed');
+    expect(await notes.readNote('renamed/inner.md')).toBe('x');
   });
 
   it('deletes notes and folders', async () => {
@@ -203,6 +271,52 @@ describe('NoteService aggregate quota', () => {
   });
 });
 
+describe('NoteService composed depth', () => {
+  it('refuses a move that would nest the tree past MAX_DEPTH', async () => {
+    // Both operands are individually legal; only the grafted result is not.
+    await notes.createFolder(`base/${chain('l', MAX_DEPTH - 1)}`);
+    await expect(notes.move('base', `${chain('g', MAX_DEPTH - 1)}/base`)).rejects.toThrow(
+      PathError,
+    );
+    // The listing must survive the rejected move.
+    const tree = await notes.tree();
+    expect(tree.some((n) => n.name === 'base')).toBe(true);
+  });
+
+  it('refuses repeated moves that each look legal but compose unbounded depth', async () => {
+    await notes.createFolder(`base/${chain('l', MAX_DEPTH - 1)}`);
+    let top = 'base';
+    let rejected = false;
+    for (let i = 1; i <= 5; i++) {
+      try {
+        await notes.move(top, `${chain(`g${i}_`, MAX_DEPTH - 1)}/${top}`);
+        top = `g${i}_0`;
+      } catch (err) {
+        expect(err).toBeInstanceOf(PathError);
+        rejected = true;
+        break;
+      }
+    }
+    expect(rejected).toBe(true);
+    await expect(notes.tree()).resolves.toBeDefined();
+  });
+
+  it('still allows a deep subtree to move somewhere shallower', async () => {
+    await notes.createFolder(`deep/${chain('l', 10)}`);
+    await notes.writeNote(`deep/${chain('l', 10)}/leaf.md`, 'data');
+    await notes.move('deep', 'moved');
+    expect(await notes.readNote(`moved/${chain('l', 10)}/leaf.md`)).toBe('data');
+  });
+
+  it('truncates instead of throwing when a tree deeper than MAX_DEPTH exists', async () => {
+    // Planted out of band — a co-tenant on the bind mount, or before this fix.
+    await mkdir(join(root, chain('d', MAX_DEPTH + 20)), { recursive: true });
+    await notes.writeNote('visible.md', 'x');
+    const tree = await notes.tree();
+    expect(tree.some((n) => n.name === 'visible.md')).toBe(true);
+  });
+});
+
 describe('NoteService tree', () => {
   it('lists folders first, then notes, alphabetically, hiding dotfiles', async () => {
     await notes.writeNote('zeta.md', '');
@@ -275,6 +389,31 @@ describe('NoteService security', () => {
     }
     await notes.writeNote('ok.md', 'content');
     expect(await notes.readNote('ok.md')).toBe('content');
+  });
+
+  it('refuses to create, write, move or delete through a dot-prefixed path', async () => {
+    // isHidden() filters the listing only, so without this rule a client could
+    // create, fill and recursively delete a subtree invisible in /api/tree.
+    const gone = async (...parts: string[]) =>
+      stat(join(root, ...parts)).then(
+        () => false,
+        () => true,
+      );
+
+    await expect(notes.createFolder('.ghost')).rejects.toThrow(PathError);
+    await expect(notes.createNote('.secret.md')).rejects.toThrow(PathError);
+    await expect(notes.writeNote('.ghost/stash.md', 'payload')).rejects.toThrow(PathError);
+    await expect(notes.deleteFolder('.ghost')).rejects.toThrow(PathError);
+    await expect(notes.deleteNote('.secret.md')).rejects.toThrow(PathError);
+
+    expect(await gone('.ghost')).toBe(true);
+    expect(await gone('.secret.md')).toBe(true);
+
+    // A rejected move must leave the source intact.
+    await notes.writeNote('visible.md', 'data');
+    await expect(notes.move('visible.md', '.hidden.md')).rejects.toThrow(PathError);
+    expect(await gone('.hidden.md')).toBe(true);
+    expect(await notes.readNote('visible.md')).toBe('data');
   });
 
   it('blocks a write through an escaping symlink in an intermediate segment', async () => {
