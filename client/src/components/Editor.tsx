@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Crepe } from '@milkdown/crepe';
 import { $prose } from '@milkdown/kit/utils';
+import { editorViewCtx } from '@milkdown/kit/core';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
@@ -63,9 +64,22 @@ export function Editor({ initialValue, onChange }: Props): React.JSX.Element {
         onChangeRef.current(markdown);
       });
     });
-    crepe.create().catch((err) => {
-      console.error('Editor failed to initialize', err);
-    });
+    crepe
+      .create()
+      .then(() => {
+        // appendTransaction only runs when a transaction is dispatched, and
+        // Milkdown mounts the view straight from EditorState.create — so the
+        // document parsed from `defaultValue` reaches first paint unsanitized.
+        // Dispatch one empty transaction to force the plugin over the initial
+        // content before the user can interact with it.
+        crepe.editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          view.dispatch(view.state.tr);
+        });
+      })
+      .catch((err) => {
+        console.error('Editor failed to initialize', err);
+      });
 
     return () => {
       crepe.destroy().catch(() => {

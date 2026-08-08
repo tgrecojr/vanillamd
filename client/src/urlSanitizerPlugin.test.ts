@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Schema, DOMSerializer } from 'prosemirror-model';
-import { EditorState } from 'prosemirror-state';
+import { EditorState, Plugin } from 'prosemirror-state';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { sanitizeDocUrls } from './urlSanitizerPlugin.js';
 import { SAFE_FALLBACK_URL } from './urlSafety.js';
 
@@ -50,6 +52,41 @@ function renderedAttrs(doc: ReturnType<typeof docWith>) {
   });
   return out;
 }
+
+describe('initial document load', () => {
+  it('is sanitized by the plugin once a transaction is dispatched', () => {
+    // Milkdown mounts the view straight from EditorState.create, and
+    // appendTransaction only runs inside applyTransaction — so a doc parsed
+    // from `defaultValue` reaches first paint untouched. Editor.tsx dispatches
+    // one empty transaction after create() to close that window; this pins the
+    // behaviour that makes the flush work.
+    const plugin = new Plugin({
+      appendTransaction: (_trs, _old, newState) => {
+        const tr = newState.tr;
+        return sanitizeDocUrls(newState.doc, tr) ? tr : null;
+      },
+    });
+    const state = EditorState.create({
+      doc: docWith('javascript:alert(1)', 'javascript:alert(2)'),
+      schema,
+      plugins: [plugin],
+    });
+
+    // Before any dispatch the raw URL is still present — this is the window.
+    expect(renderedAttrs(state.doc).href).toBe('javascript:alert(1)');
+
+    // The empty transaction Editor.tsx dispatches after create().
+    const flushed = state.apply(state.tr);
+    const attrs = renderedAttrs(flushed.doc);
+    expect(attrs.href).toBe(SAFE_FALLBACK_URL);
+    expect(attrs.src).toBe(SAFE_FALLBACK_URL);
+  });
+
+  it('is wired to flush on create in Editor.tsx', async () => {
+    const editor = await readFile(resolve(import.meta.dirname, 'components/Editor.tsx'), 'utf8');
+    expect(editor).toContain('view.dispatch(view.state.tr)');
+  });
+});
 
 describe('document-level URL sanitization', () => {
   it('rewrites a javascript: link and image in the document model', () => {
