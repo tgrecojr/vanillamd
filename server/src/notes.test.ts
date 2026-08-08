@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, symlink, stat, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, symlink, stat, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NoteService, NotFoundError, ConflictError, PayloadTooLargeError } from './notes.js';
@@ -244,6 +244,37 @@ describe('NoteService security', () => {
     await notes.writeNote('real.md', '');
     const tree = await notes.tree();
     expect(tree.map((n) => n.name)).toEqual(['real.md']);
+  });
+
+  it('does not write note content through a pre-planted temp symlink', async () => {
+    // The old temp name was `.${pid}.${Date.now()}.tmp` — both operands are
+    // knowable, so a co-tenant on the bind mount could pre-plant it and the
+    // default 'w' flag would follow it straight out of DATA_DIR.
+    const victim = join(outside, 'victim.txt');
+    await writeFile(victim, 'ORIGINAL');
+    const payload = 'NOTE PAYLOAD THAT SHOULD NEVER LEAVE DATA_DIR';
+
+    const now = Date.now();
+    for (let ms = now; ms < now + 60; ms++) {
+      await symlink(victim, join(root, `.${process.pid}.${ms}.tmp`)).catch(() => {
+        /* name already taken */
+      });
+    }
+
+    await notes.writeNote('note.md', payload);
+    expect(await readFile(victim, 'utf8')).toBe('ORIGINAL');
+    expect(await notes.readNote('note.md')).toBe(payload);
+  });
+
+  it('still writes when every predictable temp name is squatted', async () => {
+    const now = Date.now();
+    for (let ms = now; ms < now + 60; ms++) {
+      await writeFile(join(root, `.${process.pid}.${ms}.tmp`), 'squatted').catch(() => {
+        /* name already taken */
+      });
+    }
+    await notes.writeNote('ok.md', 'content');
+    expect(await notes.readNote('ok.md')).toBe('content');
   });
 
   it('blocks a write through an escaping symlink in an intermediate segment', async () => {

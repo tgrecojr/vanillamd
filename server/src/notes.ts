@@ -257,7 +257,53 @@ export class NoteService {
     await this.reserve(deltaBytes, (existing ? 0 : 1) + newAncestors);
 
     await mkdir(dirname(absolute), { recursive: true });
-    await atomicWrite(absolute, content);
+    await this.atomicWrite(absolute, content);
+  }
+
+  /**
+   * Write to a sibling temp file then rename over the target, so a crash
+   * mid-write can never leave a half-written note.
+   *
+   * The temp path is built after the note path was validated, so it is held to
+   * the same containment contract explicitly: it must resolve inside the root
+   * and must not sit behind a symlink. The name comes from a CSPRNG and the
+   * file is opened with 'wx' (O_CREAT|O_EXCL), so it cannot be pre-planted and
+   * an existing path — symlink included — is refused rather than followed.
+   */
+  private async atomicWrite(absolute: string, content: string): Promise<void> {
+    const dir = dirname(absolute);
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < TEMP_NAME_ATTEMPTS; attempt++) {
+      const tmp = join(dir, `.${randomBytes(16).toString('hex')}.tmp`);
+      // Same two-layer contract the note path gets: a string containment check
+      // against the configured root, then a realpath check for symlinks. The
+      // first compares unresolved paths (as resolveWithin does) because the
+      // root itself may legitimately sit behind a symlink, e.g. /var on macOS.
+      if (!resolve(tmp).startsWith(resolve(this.root) + sep)) {
+        throw new PathError('Temp file would escape the data directory');
+      }
+      await this.assertNoSymlinkEscape(tmp);
+
+      try {
+        await writeFile(tmp, content, { mode: 0o600, flag: 'wx' });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code === 'EEXIST') {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+      try {
+        await rename(tmp, absolute);
+      } catch (err) {
+        await rm(tmp, { force: true });
+        throw err;
+      }
+      return;
+    }
+
+    throw lastError;
   }
 
   /** Create a new, empty note. Fails if it already exists. */
@@ -381,41 +427,3 @@ async function statOrNull(absolute: string): Promise<Awaited<ReturnType<typeof s
 
 /** Attempts before giving up on finding an unused temp name. */
 const TEMP_NAME_ATTEMPTS = 5;
-
-/**
- * Write to a sibling temp file then rename over the target, so a crash
- * mid-write can never leave a half-written note.
- *
- * The temp name comes from a CSPRNG and the file is opened with 'wx'
- * (O_CREAT|O_EXCL). A name derived from (pid, ms) is not unique: pid is
- * constant within the process and Date.now() is millisecond-resolution, so two
- * writes to the same folder in the same millisecond shared one scratch inode
- * and published each other's bytes. O_EXCL turns any residual collision into a
- * caught error instead of silent cross-note corruption.
- */
-async function atomicWrite(absolute: string, content: string): Promise<void> {
-  const dir = dirname(absolute);
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < TEMP_NAME_ATTEMPTS; attempt++) {
-    const tmp = join(dir, `.${randomBytes(16).toString('hex')}.tmp`);
-    try {
-      await writeFile(tmp, content, { mode: 0o600, flag: 'wx' });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code === 'EEXIST') {
-        lastError = err;
-        continue;
-      }
-      throw err;
-    }
-    try {
-      await rename(tmp, absolute);
-    } catch (err) {
-      await rm(tmp, { force: true });
-      throw err;
-    }
-    return;
-  }
-
-  throw lastError;
-}
