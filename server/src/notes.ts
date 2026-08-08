@@ -1,4 +1,16 @@
-import { mkdir, readFile, writeFile, readdir, rename, rm, stat, realpath } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  readdir,
+  rename,
+  rm,
+  rmdir,
+  link,
+  unlink,
+  stat,
+  realpath,
+} from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, posix, resolve, sep } from 'node:path';
 import {
@@ -383,9 +395,10 @@ export class NoteService {
     if (composedDepth > MAX_DEPTH) {
       throw new PathError('Move would nest the tree too deeply');
     }
-    if (await exists(toAbs)) throw new ConflictError('Destination already exists');
+    // Create the parent first so no yield sits between deciding the
+    // destination is free and the act that takes the name.
     await mkdir(dirname(toAbs), { recursive: true });
-    await rename(fromAbs, toAbs);
+    await publishMove(fromAbs, toAbs, fromInfo.isDirectory());
     return toLogical;
   }
 
@@ -446,6 +459,51 @@ async function measureSubtree(absolute: string): Promise<{ bytes: number; entrie
   };
   await walk(absolute);
   return { bytes, entries };
+}
+
+/**
+ * Take the destination name atomically, failing rather than clobbering.
+ *
+ * Check-then-act cannot be made safe here: every await between an exists()
+ * probe and rename() is a yield point, and POSIX rename() silently replaces an
+ * existing file. Node exposes no renameat2(RENAME_NOREPLACE), so this uses the
+ * primitives that do fail on collision — link() for a file, and an exclusive
+ * mkdir() reservation for a directory.
+ */
+async function publishMove(fromAbs: string, toAbs: string, isDirectory: boolean): Promise<void> {
+  if (!isDirectory) {
+    // link() fails EEXIST atomically; the source only disappears once the
+    // destination is safely ours.
+    try {
+      await link(fromAbs, toAbs);
+    } catch (err) {
+      throw asConflict(err);
+    }
+    await unlink(fromAbs);
+    return;
+  }
+
+  try {
+    await mkdir(toAbs);
+  } catch (err) {
+    throw asConflict(err);
+  }
+  try {
+    // Renaming onto our own empty reservation is what POSIX allows here.
+    await rename(fromAbs, toAbs);
+  } catch (err) {
+    await rmdir(toAbs).catch(() => {
+      /* reservation already gone */
+    });
+    throw err;
+  }
+}
+
+function asConflict(err: unknown): Error {
+  if ((err as NodeJS.ErrnoException)?.code === 'EEXIST') {
+    return new ConflictError('Destination already exists');
+  }
+  return err as Error;
 }
 
 /**

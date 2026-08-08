@@ -91,6 +91,25 @@ describe('NoteService create/move/delete', () => {
     await notes.writeNote('a.md', '1');
     await notes.writeNote('b.md', '2');
     await expect(notes.move('a.md', 'b.md')).rejects.toThrow(ConflictError);
+    // A rejected move must leave both operands intact.
+    expect(await notes.readNote('a.md')).toBe('1');
+    expect(await notes.readNote('b.md')).toBe('2');
+  });
+
+  it('does not clobber a note created after the destination looked free', async () => {
+    // Every await between an existence probe and the publish is a yield point,
+    // and rename() replaces silently — so the publish itself must be atomic.
+    await notes.writeNote('source.md', 'attacker content');
+    const moving = notes.move('source.md', 'dest.md');
+    await notes.writeNote('dest.md', 'VICTIM NOTE');
+    await expect(moving).rejects.toThrow(ConflictError);
+    expect(await notes.readNote('dest.md')).toBe('VICTIM NOTE');
+  });
+
+  it('refuses to move a folder onto an existing folder', async () => {
+    await notes.createFolder('one');
+    await notes.createFolder('two');
+    await expect(notes.move('one', 'two')).rejects.toThrow(ConflictError);
   });
 
   it('refuses to move a folder into itself or its own subtree', async () => {
