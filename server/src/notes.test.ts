@@ -277,6 +277,31 @@ describe('NoteService security', () => {
     expect(await notes.readNote('ok.md')).toBe('content');
   });
 
+  it('refuses to create, write, move or delete through a dot-prefixed path', async () => {
+    // isHidden() filters the listing only, so without this rule a client could
+    // create, fill and recursively delete a subtree invisible in /api/tree.
+    const gone = async (...parts: string[]) =>
+      stat(join(root, ...parts)).then(
+        () => false,
+        () => true,
+      );
+
+    await expect(notes.createFolder('.ghost')).rejects.toThrow(PathError);
+    await expect(notes.createNote('.secret.md')).rejects.toThrow(PathError);
+    await expect(notes.writeNote('.ghost/stash.md', 'payload')).rejects.toThrow(PathError);
+    await expect(notes.deleteFolder('.ghost')).rejects.toThrow(PathError);
+    await expect(notes.deleteNote('.secret.md')).rejects.toThrow(PathError);
+
+    expect(await gone('.ghost')).toBe(true);
+    expect(await gone('.secret.md')).toBe(true);
+
+    // A rejected move must leave the source intact.
+    await notes.writeNote('visible.md', 'data');
+    await expect(notes.move('visible.md', '.hidden.md')).rejects.toThrow(PathError);
+    expect(await gone('.hidden.md')).toBe(true);
+    expect(await notes.readNote('visible.md')).toBe('data');
+  });
+
   it('blocks a write through an escaping symlink in an intermediate segment', async () => {
     // The target file does not exist yet, so the symlink-escape check must climb
     // from the (missing) target up to the symlinked ancestor and reject there.
