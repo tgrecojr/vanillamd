@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Crepe } from '@milkdown/crepe';
+import { linkAttr, imageAttr } from '@milkdown/kit/preset/commonmark';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import { buildToolbar } from './editorToolbar';
+import { sanitizeUrl } from '../urlSafety';
 
 interface Props {
   /** Initial markdown for this note. Read once on mount; remount via `key`. */
@@ -32,6 +34,17 @@ export function Editor({ initialValue, onChange }: Props): React.JSX.Element {
         [Crepe.Feature.Toolbar]: { buildToolbar },
       },
     });
+    // Note bodies are arbitrary markdown, so their link/image URLs are
+    // untrusted input to the DOM. Hold them to a scheme allowlist here — once,
+    // at the render sink — so the CSP is a second layer rather than the only
+    // thing preventing a javascript: URL from executing.
+    crepe.editor.config((ctx) => {
+      ctx.set(linkAttr.key, (node) => ({ href: sanitizeUrl(node.attrs.href as string) }));
+      ctx.set(imageAttr.key, (node) => ({
+        src: sanitizeUrl(node.attrs.src as string, { kind: 'image' }),
+      }));
+    });
+
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(markdown);
