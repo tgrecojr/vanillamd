@@ -1,264 +1,315 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import type { FastifyInstance } from 'fastify';
-import { buildApp } from './app.js';
-import { loadConfig, parseTrustProxy } from './config.js';
-import type { Config } from './config.js';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import type { FastifyInstance } from "fastify";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildApp } from "./app.js";
+import type { Config } from "./config.js";
+import { loadConfig, parseTrustProxy } from "./config.js";
 
 let app: FastifyInstance;
 let dataDir: string;
 
 /** A complete Config for a throwaway app rooted at `dir`. */
 function baseConfig(dir: string): Config {
-  return {
-    dataDir: dir,
-    clientDir: join(dir, '__no_client__'),
-    port: 0,
-    host: '127.0.0.1',
-    maxNoteBytes: 1024 * 1024,
-    logLevel: 'silent',
-    requestTimeoutMs: 300_000,
-    maxConnections: 512,
-    rateLimitMax: 1000,
-    rateLimitWindowMs: 60_000,
-    maxTotalBytes: 1024 * 1024 * 1024,
-    maxEntries: 10_000,
-    trustProxy: false,
-  };
+	return {
+		dataDir: dir,
+		clientDir: join(dir, "__no_client__"),
+		port: 0,
+		host: "127.0.0.1",
+		maxNoteBytes: 1024 * 1024,
+		logLevel: "silent",
+		requestTimeoutMs: 300_000,
+		maxConnections: 512,
+		rateLimitMax: 1000,
+		rateLimitWindowMs: 60_000,
+		maxTotalBytes: 1024 * 1024 * 1024,
+		maxEntries: 10_000,
+		trustProxy: false,
+	};
 }
 
 beforeEach(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'vanillamd-app-'));
-  app = await buildApp(baseConfig(dataDir));
+	dataDir = await mkdtemp(join(tmpdir(), "vanillamd-app-"));
+	app = await buildApp(baseConfig(dataDir));
 });
 
 afterEach(async () => {
-  await app.close();
-  await rm(dataDir, { recursive: true, force: true });
+	await app.close();
+	await rm(dataDir, { recursive: true, force: true });
 });
 
-describe('HTTP API', () => {
-  it('reports health', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok' });
-  });
+describe("HTTP API", () => {
+	it("reports health", async () => {
+		const res = await app.inject({ method: "GET", url: "/api/health" });
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: "ok" });
+	});
 
-  it('creates, writes, reads, and lists notes', async () => {
-    const create = await app.inject({
-      method: 'POST',
-      url: '/api/note',
-      payload: { path: 'work/todo.md' },
-    });
-    expect(create.statusCode).toBe(201);
+	it("creates, writes, reads, and lists notes", async () => {
+		const create = await app.inject({
+			method: "POST",
+			url: "/api/note",
+			payload: { path: "work/todo.md" },
+		});
+		expect(create.statusCode).toBe(201);
 
-    const write = await app.inject({
-      method: 'PUT',
-      url: '/api/note',
-      payload: { path: 'work/todo.md', content: '# Hello' },
-    });
-    expect(write.statusCode).toBe(200);
+		const write = await app.inject({
+			method: "PUT",
+			url: "/api/note",
+			payload: { path: "work/todo.md", content: "# Hello" },
+		});
+		expect(write.statusCode).toBe(200);
 
-    const read = await app.inject({ method: 'GET', url: '/api/note?path=work%2Ftodo.md' });
-    expect(read.json()).toEqual({ content: '# Hello' });
+		const read = await app.inject({
+			method: "GET",
+			url: "/api/note?path=work%2Ftodo.md",
+		});
+		expect(read.json()).toEqual({ content: "# Hello" });
 
-    const tree = await app.inject({ method: 'GET', url: '/api/tree' });
-    const body = tree.json() as { tree: Array<{ name: string; type: string }> };
-    expect(body.tree[0]).toMatchObject({ name: 'work', type: 'folder' });
-  });
+		const tree = await app.inject({ method: "GET", url: "/api/tree" });
+		const body = tree.json() as { tree: Array<{ name: string; type: string }> };
+		expect(body.tree[0]).toMatchObject({ name: "work", type: "folder" });
+	});
 
-  it('moves a note via /api/move', async () => {
-    await app.inject({ method: 'POST', url: '/api/note', payload: { path: 'a.md' } });
-    await app.inject({ method: 'PUT', url: '/api/note', payload: { path: 'a.md', content: 'hi' } });
+	it("moves a note via /api/move", async () => {
+		await app.inject({
+			method: "POST",
+			url: "/api/note",
+			payload: { path: "a.md" },
+		});
+		await app.inject({
+			method: "PUT",
+			url: "/api/note",
+			payload: { path: "a.md", content: "hi" },
+		});
 
-    const move = await app.inject({
-      method: 'POST',
-      url: '/api/move',
-      payload: { from: 'a.md', to: 'sub/b.md' },
-    });
-    expect(move.statusCode).toBe(200);
-    expect(move.json()).toEqual({ path: 'sub/b.md' });
+		const move = await app.inject({
+			method: "POST",
+			url: "/api/move",
+			payload: { from: "a.md", to: "sub/b.md" },
+		});
+		expect(move.statusCode).toBe(200);
+		expect(move.json()).toEqual({ path: "sub/b.md" });
 
-    const read = await app.inject({ method: 'GET', url: '/api/note?path=sub%2Fb.md' });
-    expect(read.json()).toEqual({ content: 'hi' });
-    const gone = await app.inject({ method: 'GET', url: '/api/note?path=a.md' });
-    expect(gone.statusCode).toBe(404);
-  });
+		const read = await app.inject({
+			method: "GET",
+			url: "/api/note?path=sub%2Fb.md",
+		});
+		expect(read.json()).toEqual({ content: "hi" });
+		const gone = await app.inject({
+			method: "GET",
+			url: "/api/note?path=a.md",
+		});
+		expect(gone.statusCode).toBe(404);
+	});
 
-  it('recursively deletes a folder and its contents', async () => {
-    await app.inject({
-      method: 'PUT',
-      url: '/api/note',
-      payload: { path: 'f/g/x.md', content: '' },
-    });
+	it("recursively deletes a folder and its contents", async () => {
+		await app.inject({
+			method: "PUT",
+			url: "/api/note",
+			payload: { path: "f/g/x.md", content: "" },
+		});
 
-    const del = await app.inject({ method: 'DELETE', url: '/api/folder?path=f' });
-    expect(del.statusCode).toBe(200);
+		const del = await app.inject({
+			method: "DELETE",
+			url: "/api/folder?path=f",
+		});
+		expect(del.statusCode).toBe(200);
 
-    const read = await app.inject({ method: 'GET', url: '/api/note?path=f%2Fg%2Fx.md' });
-    expect(read.statusCode).toBe(404);
-    const reDel = await app.inject({ method: 'DELETE', url: '/api/folder?path=f' });
-    expect(reDel.statusCode).toBe(404);
-  });
+		const read = await app.inject({
+			method: "GET",
+			url: "/api/note?path=f%2Fg%2Fx.md",
+		});
+		expect(read.statusCode).toBe(404);
+		const reDel = await app.inject({
+			method: "DELETE",
+			url: "/api/folder?path=f",
+		});
+		expect(reDel.statusCode).toBe(404);
+	});
 
-  it('rejects a traversal attempt with 400', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/note?path=..%2F..%2Fetc%2Fpasswd',
-    });
-    expect(res.statusCode).toBe(400);
-  });
+	it("rejects a traversal attempt with 400", async () => {
+		const res = await app.inject({
+			method: "GET",
+			url: "/api/note?path=..%2F..%2Fetc%2Fpasswd",
+		});
+		expect(res.statusCode).toBe(400);
+	});
 
-  it('rejects a missing path with 400', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/note', payload: {} });
-    expect(res.statusCode).toBe(400);
-  });
+	it("rejects a missing path with 400", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/note",
+			payload: {},
+		});
+		expect(res.statusCode).toBe(400);
+	});
 
-  it('returns 404 for a missing note', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/note?path=nope.md' });
-    expect(res.statusCode).toBe(404);
-  });
+	it("returns 404 for a missing note", async () => {
+		const res = await app.inject({
+			method: "GET",
+			url: "/api/note?path=nope.md",
+		});
+		expect(res.statusCode).toBe(404);
+	});
 
-  it('sets a content-security-policy header', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
-    expect(res.headers['content-security-policy']).toContain("default-src 'self'");
-  });
+	it("sets a content-security-policy header", async () => {
+		const res = await app.inject({ method: "GET", url: "/api/health" });
+		expect(res.headers["content-security-policy"]).toContain(
+			"default-src 'self'",
+		);
+	});
 
-  it('returns 404 JSON for unknown API routes', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/does-not-exist' });
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).toMatchObject({ error: expect.any(String) });
-  });
+	it("returns 404 JSON for unknown API routes", async () => {
+		const res = await app.inject({ method: "GET", url: "/api/does-not-exist" });
+		expect(res.statusCode).toBe(404);
+		expect(res.json()).toMatchObject({ error: expect.any(String) });
+	});
 
-  it('ignores a forged X-Forwarded-For unless the proxy is trusted', async () => {
-    // request.ip is the only client identifier in the logs, so trusting every
-    // peer would make it attacker-chosen.
-    const peer = '203.0.113.9';
-    const spoofed = '1.2.3.4';
+	it("ignores a forged X-Forwarded-For unless the proxy is trusted", async () => {
+		// request.ip is the only client identifier in the logs, so trusting every
+		// peer would make it attacker-chosen.
+		const peer = "203.0.113.9";
+		const spoofed = "1.2.3.4";
 
-    const probe = async (trustProxy: Config['trustProxy']): Promise<string> => {
-      const dir = await mkdtemp(join(tmpdir(), 'vanillamd-tp-'));
-      const instance = await buildApp({ ...baseConfig(dir), trustProxy });
-      let seen = '';
-      instance.get('/__probe', async (req) => {
-        seen = req.ip;
-        return { ip: req.ip };
-      });
-      await instance.ready();
-      await instance.inject({
-        method: 'GET',
-        url: '/__probe',
-        remoteAddress: peer,
-        headers: { 'x-forwarded-for': spoofed },
-      });
-      await instance.close();
-      await rm(dir, { recursive: true, force: true });
-      return seen;
-    };
+		const probe = async (trustProxy: Config["trustProxy"]): Promise<string> => {
+			const dir = await mkdtemp(join(tmpdir(), "vanillamd-tp-"));
+			const instance = await buildApp({ ...baseConfig(dir), trustProxy });
+			let seen = "";
+			instance.get("/__probe", async (req) => {
+				seen = req.ip;
+				return { ip: req.ip };
+			});
+			await instance.ready();
+			await instance.inject({
+				method: "GET",
+				url: "/__probe",
+				remoteAddress: peer,
+				headers: { "x-forwarded-for": spoofed },
+			});
+			await instance.close();
+			await rm(dir, { recursive: true, force: true });
+			return seen;
+		};
 
-    expect(await probe(false)).toBe(peer);
-    // Scoped trust still works — that is the deployment behind the tunnel.
-    expect(await probe([peer])).toBe(spoofed);
-  });
+		expect(await probe(false)).toBe(peer);
+		// Scoped trust still works — that is the deployment behind the tunnel.
+		expect(await probe([peer])).toBe(spoofed);
+	});
 
-  it('defaults to trusting no proxy', async () => {
-    const previous = process.env.TRUST_PROXY;
-    delete process.env.TRUST_PROXY;
-    try {
-      expect(loadConfig().trustProxy).toBe(false);
-    } finally {
-      if (previous !== undefined) process.env.TRUST_PROXY = previous;
-    }
-  });
+	it("defaults to trusting no proxy", async () => {
+		const previous = process.env.TRUST_PROXY;
+		delete process.env.TRUST_PROXY;
+		try {
+			expect(loadConfig().trustProxy).toBe(false);
+		} finally {
+			if (previous !== undefined) process.env.TRUST_PROXY = previous;
+		}
+	});
 
-  it('parses TRUST_PROXY into hop counts and address lists', () => {
-    expect(parseTrustProxy(undefined)).toBe(false);
-    expect(parseTrustProxy('')).toBe(false);
-    expect(parseTrustProxy('false')).toBe(false);
-    expect(parseTrustProxy('true')).toBe(true);
-    expect(parseTrustProxy('1')).toBe(1);
-    expect(parseTrustProxy('10.0.0.0/8, 192.168.1.1')).toEqual(['10.0.0.0/8', '192.168.1.1']);
-  });
+	it("parses TRUST_PROXY into hop counts and address lists", () => {
+		expect(parseTrustProxy(undefined)).toBe(false);
+		expect(parseTrustProxy("")).toBe(false);
+		expect(parseTrustProxy("false")).toBe(false);
+		expect(parseTrustProxy("true")).toBe(true);
+		expect(parseTrustProxy("1")).toBe(1);
+		expect(parseTrustProxy("10.0.0.0/8, 192.168.1.1")).toEqual([
+			"10.0.0.0/8",
+			"192.168.1.1",
+		]);
+	});
 
-  it('bounds request duration, socket count and request rate', async () => {
-    // Fastify defaults requestTimeout to 0, which overrides Node's own 300s
-    // ceiling, and nothing capped sockets or request volume.
-    expect(app.server.requestTimeout).toBeGreaterThan(0);
-    expect(app.server.maxConnections).toBeGreaterThan(0);
+	it("bounds request duration, socket count and request rate", async () => {
+		// Fastify defaults requestTimeout to 0, which overrides Node's own 300s
+		// ceiling, and nothing capped sockets or request volume.
+		expect(app.server.requestTimeout).toBeGreaterThan(0);
+		expect(app.server.maxConnections).toBeGreaterThan(0);
 
-    const limitedDir = await mkdtemp(join(tmpdir(), 'vanillamd-rl-'));
-    const limited = await buildApp({
-      ...baseConfig(limitedDir),
-      rateLimitMax: 5,
-      rateLimitWindowMs: 60_000,
-    });
-    try {
-      let rejected = 0;
-      for (let i = 0; i < 20; i++) {
-        const res = await limited.inject({
-          method: 'GET',
-          url: '/api/health',
-          remoteAddress: '203.0.113.9',
-        });
-        if (res.statusCode === 429) rejected++;
-      }
-      expect(rejected).toBeGreaterThan(0);
-    } finally {
-      await limited.close();
-      await rm(limitedDir, { recursive: true, force: true });
-    }
-  });
+		const limitedDir = await mkdtemp(join(tmpdir(), "vanillamd-rl-"));
+		const limited = await buildApp({
+			...baseConfig(limitedDir),
+			rateLimitMax: 5,
+			rateLimitWindowMs: 60_000,
+		});
+		try {
+			let rejected = 0;
+			for (let i = 0; i < 20; i++) {
+				const res = await limited.inject({
+					method: "GET",
+					url: "/api/health",
+					remoteAddress: "203.0.113.9",
+				});
+				if (res.statusCode === 429) rejected++;
+			}
+			expect(rejected).toBeGreaterThan(0);
+		} finally {
+			await limited.close();
+			await rm(limitedDir, { recursive: true, force: true });
+		}
+	});
 
-  it('never serves a source map, and the build does not emit one', async () => {
-    // Maps carry `sourcesContent` — the verbatim TypeScript of the client —
-    // and dist/ is served unauthenticated, so both halves must hold.
-    const mapDir = await mkdtemp(join(tmpdir(), 'vanillamd-map-'));
-    await mkdir(join(mapDir, 'assets'), { recursive: true });
-    await writeFile(join(mapDir, 'index.html'), '<!doctype html><html></html>');
-    await writeFile(join(mapDir, 'assets', 'app.js'), 'console.log(1)');
-    await writeFile(
-      join(mapDir, 'assets', 'app.js.map'),
-      JSON.stringify({ version: 3, sourcesContent: ['const SECRET = 1;'], mappings: 'AAAA' }),
-    );
-    const withMaps = await buildApp({ ...baseConfig(mapDir), clientDir: mapDir });
-    try {
-      const map = await withMaps.inject({ method: 'GET', url: '/assets/app.js.map' });
-      expect(map.statusCode).toBe(404);
-      expect(map.body).not.toContain('sourcesContent');
+	it("never serves a source map, and the build does not emit one", async () => {
+		// Maps carry `sourcesContent` — the verbatim TypeScript of the client —
+		// and dist/ is served unauthenticated, so both halves must hold.
+		const mapDir = await mkdtemp(join(tmpdir(), "vanillamd-map-"));
+		await mkdir(join(mapDir, "assets"), { recursive: true });
+		await writeFile(join(mapDir, "index.html"), "<!doctype html><html></html>");
+		await writeFile(join(mapDir, "assets", "app.js"), "console.log(1)");
+		await writeFile(
+			join(mapDir, "assets", "app.js.map"),
+			JSON.stringify({
+				version: 3,
+				sourcesContent: ["const SECRET = 1;"],
+				mappings: "AAAA",
+			}),
+		);
+		const withMaps = await buildApp({
+			...baseConfig(mapDir),
+			clientDir: mapDir,
+		});
+		try {
+			const map = await withMaps.inject({
+				method: "GET",
+				url: "/assets/app.js.map",
+			});
+			expect(map.statusCode).toBe(404);
+			expect(map.body).not.toContain("sourcesContent");
 
-      // Ordinary assets must keep working.
-      const js = await withMaps.inject({ method: 'GET', url: '/assets/app.js' });
-      expect(js.statusCode).toBe(200);
+			// Ordinary assets must keep working.
+			const js = await withMaps.inject({
+				method: "GET",
+				url: "/assets/app.js",
+			});
+			expect(js.statusCode).toBe(200);
 
-      const viteConfig = await readFile(
-        resolve(import.meta.dirname, '../../client/vite.config.ts'),
-        'utf8',
-      );
-      expect(viteConfig).not.toMatch(/sourcemap:\s*true/);
-    } finally {
-      await withMaps.close();
-      await rm(mapDir, { recursive: true, force: true });
-    }
-  });
+			const viteConfig = await readFile(
+				resolve(import.meta.dirname, "../../client/vite.config.ts"),
+				"utf8",
+			);
+			expect(viteConfig).not.toMatch(/sourcemap:\s*true/);
+		} finally {
+			await withMaps.close();
+			await rm(mapDir, { recursive: true, force: true });
+		}
+	});
 
-  it('rejects a note write larger than maxNoteBytes with 413', async () => {
-    // Build a dedicated app with a tiny note ceiling. The Fastify body limit is
-    // maxNoteBytes + 64 KiB, so a payload above maxNoteBytes but below that still
-    // reaches NoteService, exercising the explicit size check (not the body cap).
-    const smallDir = await mkdtemp(join(tmpdir(), 'vanillamd-small-'));
-    const small = await buildApp({ ...baseConfig(smallDir), maxNoteBytes: 16 });
-    try {
-      const res = await small.inject({
-        method: 'PUT',
-        url: '/api/note',
-        payload: { path: 'big.md', content: 'x'.repeat(64) },
-      });
-      expect(res.statusCode).toBe(413);
-    } finally {
-      await small.close();
-      await rm(smallDir, { recursive: true, force: true });
-    }
-  });
+	it("rejects a note write larger than maxNoteBytes with 413", async () => {
+		// Build a dedicated app with a tiny note ceiling. The Fastify body limit is
+		// maxNoteBytes + 64 KiB, so a payload above maxNoteBytes but below that still
+		// reaches NoteService, exercising the explicit size check (not the body cap).
+		const smallDir = await mkdtemp(join(tmpdir(), "vanillamd-small-"));
+		const small = await buildApp({ ...baseConfig(smallDir), maxNoteBytes: 16 });
+		try {
+			const res = await small.inject({
+				method: "PUT",
+				url: "/api/note",
+				payload: { path: "big.md", content: "x".repeat(64) },
+			});
+			expect(res.statusCode).toBe(413);
+		} finally {
+			await small.close();
+			await rm(smallDir, { recursive: true, force: true });
+		}
+	});
 });
