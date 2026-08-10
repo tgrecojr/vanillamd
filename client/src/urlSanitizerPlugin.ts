@@ -1,6 +1,6 @@
-import type { Node as ProseNode } from '@milkdown/kit/prose/model';
-import type { Transaction } from '@milkdown/kit/prose/state';
-import { sanitizeUrl } from './urlSafety';
+import type { Node as ProseNode } from "@milkdown/kit/prose/model";
+import type { Transaction } from "@milkdown/kit/prose/state";
+import { sanitizeUrl } from "./urlSafety";
 
 /**
  * Rewrite every unsafe link `href` and image `src` in `doc` to the allowlist's
@@ -15,31 +15,31 @@ import { sanitizeUrl } from './urlSafety';
  * be safe in the model itself so the spread propagates the safe value.
  */
 export function sanitizeDocUrls(doc: ProseNode, tr: Transaction): boolean {
-  let changed = false;
+	let changed = false;
 
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'image') {
-      const raw = node.attrs.src as string;
-      const safe = sanitizeUrl(raw, { kind: 'image' });
-      if (safe !== raw) {
-        tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: safe });
-        changed = true;
-      }
-    }
+	doc.descendants((node, pos) => {
+		if (node.type.name === "image") {
+			const raw = node.attrs.src as string;
+			const safe = sanitizeUrl(raw, { kind: "image" });
+			if (safe !== raw) {
+				tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: safe });
+				changed = true;
+			}
+		}
 
-    for (const mark of node.marks) {
-      if (mark.type.name !== 'link') continue;
-      const raw = mark.attrs.href as string;
-      const safe = sanitizeUrl(raw);
-      if (safe === raw) continue;
+		for (const mark of node.marks) {
+			if (mark.type.name !== "link") continue;
+			const raw = mark.attrs.href as string;
+			const safe = sanitizeUrl(raw);
+			if (safe === raw) continue;
 
-      const from = pos;
-      const to = pos + node.nodeSize;
-      tr.removeMark(from, to, mark.type);
-      tr.addMark(from, to, mark.type.create({ ...mark.attrs, href: safe }));
-      changed = true;
-    }
-  });
+			const from = pos;
+			const to = pos + node.nodeSize;
+			tr.removeMark(from, to, mark.type);
+			tr.addMark(from, to, mark.type.create({ ...mark.attrs, href: safe }));
+			changed = true;
+		}
+	});
 
-  return changed;
+	return changed;
 }

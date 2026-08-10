@@ -14,7 +14,7 @@ no auth of its own).
 - Backend: Fastify (serves the API and the built SPA from one process)
 - Frontend: React + Milkdown (Crepe) WYSIWYG editor, built with Vite
 - Storage: the filesystem (`DATA_DIR`), no database
-- Tooling: ESLint + Prettier, Vitest, npm workspaces
+- Tooling: Biome (lint + format), Vitest, npm workspaces
 
 ## Commands
 
@@ -22,9 +22,9 @@ no auth of its own).
 - `npm run build` — build client then server
 - `npm start` — run the built server (`server/dist/index.js`)
 - `npm test` — server unit + HTTP integration tests (Vitest)
-- `npm run lint` — ESLint across the repo
+- `npm run lint` — Biome lint across the repo
 - `npm run typecheck` — typecheck both workspaces
-- `npm run format` / `npm run format:check` — Prettier
+- `npm run format` / `npm run format:check` — Biome formatter
 
 Run the full gate before pushing: `npm run lint && npm run typecheck && npm test && npm run build`.
 

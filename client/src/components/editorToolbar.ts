@@ -1,16 +1,15 @@
-import type { ToolbarFeatureConfig } from '@milkdown/crepe/feature/toolbar';
-import type { Ctx } from '@milkdown/kit/ctx';
-
-import { commandsCtx, editorViewCtx } from '@milkdown/kit/core';
+import type { ToolbarFeatureConfig } from "@milkdown/crepe/feature/toolbar";
+import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
+import type { Ctx } from "@milkdown/kit/ctx";
 import {
-  liftListItemCommand,
-  turnIntoTextCommand,
-  wrapInBlockquoteCommand,
-  wrapInBulletListCommand,
-  wrapInHeadingCommand,
-  wrapInOrderedListCommand,
-} from '@milkdown/kit/preset/commonmark';
-import { lift } from '@milkdown/kit/prose/commands';
+	liftListItemCommand,
+	turnIntoTextCommand,
+	wrapInBlockquoteCommand,
+	wrapInBulletListCommand,
+	wrapInHeadingCommand,
+	wrapInOrderedListCommand,
+} from "@milkdown/kit/preset/commonmark";
+import { lift } from "@milkdown/kit/prose/commands";
 
 /**
  * Block-level formatting buttons added to Crepe's selection toolbar (the popup
@@ -22,7 +21,7 @@ import { lift } from '@milkdown/kit/prose/commands';
  * reverts the block to a plain paragraph.
  */
 
-type BuildToolbar = NonNullable<ToolbarFeatureConfig['buildToolbar']>;
+type BuildToolbar = NonNullable<ToolbarFeatureConfig["buildToolbar"]>;
 type ToolbarBuilder = Parameters<BuildToolbar>[0];
 
 // Icons mirror Crepe's own SVGs (it does not export them publicly) so the new
@@ -36,69 +35,75 @@ const orderedListIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" heig
 
 /** True when the block at the selection anchor is a heading of `level`. */
 function isHeading(ctx: Ctx, level: number): boolean {
-  const { state } = ctx.get(editorViewCtx);
-  const node = state.selection.$from.parent;
-  return node.type.name === 'heading' && node.attrs.level === level;
+	const { state } = ctx.get(editorViewCtx);
+	const node = state.selection.$from.parent;
+	return node.type.name === "heading" && node.attrs.level === level;
 }
 
 /** True when the selection anchor sits inside a node named `typeName`. */
 function isWrappedIn(ctx: Ctx, typeName: string): boolean {
-  const { $from } = ctx.get(editorViewCtx).state.selection;
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    if ($from.node(depth).type.name === typeName) return true;
-  }
-  return false;
+	const { $from } = ctx.get(editorViewCtx).state.selection;
+	for (let depth = $from.depth; depth > 0; depth -= 1) {
+		if ($from.node(depth).type.name === typeName) return true;
+	}
+	return false;
 }
 
 export const buildToolbar: BuildToolbar = (builder: ToolbarBuilder) => {
-  const group = builder.addGroup('block', 'Block');
+	const group = builder.addGroup("block", "Block");
 
-  const heading = (level: number, icon: string) => ({
-    icon,
-    active: (ctx: Ctx) => isHeading(ctx, level),
-    onRun: (ctx: Ctx) => {
-      const commands = ctx.get(commandsCtx);
-      commands.call(
-        isHeading(ctx, level) ? turnIntoTextCommand.key : wrapInHeadingCommand.key,
-        level,
-      );
-    },
-  });
+	const heading = (level: number, icon: string) => ({
+		icon,
+		active: (ctx: Ctx) => isHeading(ctx, level),
+		onRun: (ctx: Ctx) => {
+			const commands = ctx.get(commandsCtx);
+			commands.call(
+				isHeading(ctx, level)
+					? turnIntoTextCommand.key
+					: wrapInHeadingCommand.key,
+				level,
+			);
+		},
+	});
 
-  group
-    .addItem('h1', heading(1, h1Icon))
-    .addItem('h2', heading(2, h2Icon))
-    .addItem('h3', heading(3, h3Icon))
-    .addItem('quote', {
-      icon: quoteIcon,
-      active: (ctx: Ctx) => isWrappedIn(ctx, 'blockquote'),
-      onRun: (ctx: Ctx) => {
-        const view = ctx.get(editorViewCtx);
-        if (isWrappedIn(ctx, 'blockquote')) {
-          lift(view.state, view.dispatch);
-        } else {
-          ctx.get(commandsCtx).call(wrapInBlockquoteCommand.key);
-        }
-      },
-    })
-    .addItem('bullet-list', {
-      icon: bulletListIcon,
-      active: (ctx: Ctx) => isWrappedIn(ctx, 'bullet_list'),
-      onRun: (ctx: Ctx) => {
-        const commands = ctx.get(commandsCtx);
-        commands.call(
-          isWrappedIn(ctx, 'bullet_list') ? liftListItemCommand.key : wrapInBulletListCommand.key,
-        );
-      },
-    })
-    .addItem('ordered-list', {
-      icon: orderedListIcon,
-      active: (ctx: Ctx) => isWrappedIn(ctx, 'ordered_list'),
-      onRun: (ctx: Ctx) => {
-        const commands = ctx.get(commandsCtx);
-        commands.call(
-          isWrappedIn(ctx, 'ordered_list') ? liftListItemCommand.key : wrapInOrderedListCommand.key,
-        );
-      },
-    });
+	group
+		.addItem("h1", heading(1, h1Icon))
+		.addItem("h2", heading(2, h2Icon))
+		.addItem("h3", heading(3, h3Icon))
+		.addItem("quote", {
+			icon: quoteIcon,
+			active: (ctx: Ctx) => isWrappedIn(ctx, "blockquote"),
+			onRun: (ctx: Ctx) => {
+				const view = ctx.get(editorViewCtx);
+				if (isWrappedIn(ctx, "blockquote")) {
+					lift(view.state, view.dispatch);
+				} else {
+					ctx.get(commandsCtx).call(wrapInBlockquoteCommand.key);
+				}
+			},
+		})
+		.addItem("bullet-list", {
+			icon: bulletListIcon,
+			active: (ctx: Ctx) => isWrappedIn(ctx, "bullet_list"),
+			onRun: (ctx: Ctx) => {
+				const commands = ctx.get(commandsCtx);
+				commands.call(
+					isWrappedIn(ctx, "bullet_list")
+						? liftListItemCommand.key
+						: wrapInBulletListCommand.key,
+				);
+			},
+		})
+		.addItem("ordered-list", {
+			icon: orderedListIcon,
+			active: (ctx: Ctx) => isWrappedIn(ctx, "ordered_list"),
+			onRun: (ctx: Ctx) => {
+				const commands = ctx.get(commandsCtx);
+				commands.call(
+					isWrappedIn(ctx, "ordered_list")
+						? liftListItemCommand.key
+						: wrapInOrderedListCommand.key,
+				);
+			},
+		});
 };
