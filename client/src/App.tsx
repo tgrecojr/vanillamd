@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
 import { Editor } from "./components/Editor";
+import { Bars3Icon } from "./components/icons/ui";
 import { Sidebar } from "./components/Sidebar";
 import type { TreeNode } from "./types";
 import { useAutosave } from "./useAutosave";
@@ -18,6 +19,9 @@ const parentOf = (p: string): string => {
 const joinPath = (dir: string, name: string): string =>
 	dir ? `${dir}/${name}` : name;
 
+const noteTitle = (p: string): string =>
+	p.slice(p.lastIndexOf("/") + 1).replace(/\.md$/i, "");
+
 const cleanName = (raw: string | null): string | null => {
 	if (raw === null) return null;
 	const name = raw.trim();
@@ -28,8 +32,8 @@ const cleanName = (raw: string | null): string | null => {
 export function App(): React.JSX.Element {
 	const [tree, setTree] = useState<TreeNode[]>([]);
 	const [open, setOpen] = useState<OpenNote | null>(null);
-	const [activeFolder, setActiveFolder] = useState("");
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	const { state: saveState, schedule, flush } = useAutosave();
@@ -72,7 +76,6 @@ export function App(): React.JSX.Element {
 				await flush();
 				const content = await api.getNote(path);
 				setOpen({ path, content });
-				setActiveFolder(parentOf(path));
 			} catch (err) {
 				fail(err);
 			}
@@ -81,7 +84,6 @@ export function App(): React.JSX.Element {
 	);
 
 	const toggleFolder = useCallback((path: string): void => {
-		setActiveFolder(path);
 		setExpanded((prev) => {
 			const next = new Set(prev);
 			if (next.has(path)) next.delete(path);
@@ -89,6 +91,11 @@ export function App(): React.JSX.Element {
 			return next;
 		});
 	}, []);
+
+	const closeNote = useCallback(async (): Promise<void> => {
+		await flush();
+		setOpen(null);
+	}, [flush]);
 
 	const onEditorChange = useCallback(
 		(markdown: string): void => {
@@ -100,35 +107,40 @@ export function App(): React.JSX.Element {
 		[schedule],
 	);
 
-	const newNote = useCallback(async (): Promise<void> => {
-		const name = cleanName(window.prompt("Note name:"));
-		if (!name) return;
-		const fileName = name.toLowerCase().endsWith(".md") ? name : `${name}.md`;
-		const path = joinPath(activeFolder, fileName);
-		try {
-			await api.createNote(path);
-			await refreshTree();
-			expandAncestors(path);
-			await selectNote(path);
-		} catch (err) {
-			fail(err);
-		}
-	}, [activeFolder, refreshTree, expandAncestors, selectNote, fail]);
+	const newNote = useCallback(
+		async (folder: string): Promise<void> => {
+			const name = cleanName(window.prompt("Note name:"));
+			if (!name) return;
+			const fileName = name.toLowerCase().endsWith(".md") ? name : `${name}.md`;
+			const path = joinPath(folder, fileName);
+			try {
+				await api.createNote(path);
+				await refreshTree();
+				expandAncestors(path);
+				await selectNote(path);
+			} catch (err) {
+				fail(err);
+			}
+		},
+		[refreshTree, expandAncestors, selectNote, fail],
+	);
 
-	const newFolder = useCallback(async (): Promise<void> => {
-		const name = cleanName(window.prompt("Folder name:"));
-		if (!name) return;
-		const path = joinPath(activeFolder, name);
-		try {
-			await api.createFolder(path);
-			await refreshTree();
-			expandAncestors(path);
-			setExpanded((prev) => new Set(prev).add(path));
-			setActiveFolder(path);
-		} catch (err) {
-			fail(err);
-		}
-	}, [activeFolder, refreshTree, expandAncestors, fail]);
+	const newFolder = useCallback(
+		async (folder: string): Promise<void> => {
+			const name = cleanName(window.prompt("Folder name:"));
+			if (!name) return;
+			const path = joinPath(folder, name);
+			try {
+				await api.createFolder(path);
+				await refreshTree();
+				expandAncestors(path);
+				setExpanded((prev) => new Set(prev).add(path));
+			} catch (err) {
+				fail(err);
+			}
+		},
+		[refreshTree, expandAncestors, fail],
+	);
 
 	const rename = useCallback(
 		async (node: TreeNode): Promise<void> => {
@@ -178,22 +190,23 @@ export function App(): React.JSX.Element {
 	);
 
 	return (
-		<div className="layout">
-			<Sidebar
-				tree={tree}
-				selectedPath={open?.path ?? null}
-				activeFolder={activeFolder}
-				expanded={expanded}
-				saveState={saveState}
-				themePreference={preference}
-				onToggleFolder={toggleFolder}
-				onSelectNote={(p) => void selectNote(p)}
-				onRename={(n) => void rename(n)}
-				onDelete={(n) => void remove(n)}
-				onNewNote={() => void newNote()}
-				onNewFolder={() => void newFolder()}
-				onCycleTheme={cycle}
-			/>
+		<div className={`layout${sidebarOpen ? "" : " sidebar-hidden"}`}>
+			{sidebarOpen && (
+				<Sidebar
+					tree={tree}
+					selectedPath={open?.path ?? null}
+					expanded={expanded}
+					saveState={saveState}
+					themePreference={preference}
+					onToggleFolder={toggleFolder}
+					onSelectNote={(p) => void selectNote(p)}
+					onRename={(n) => void rename(n)}
+					onDelete={(n) => void remove(n)}
+					onNewNote={(f) => void newNote(f)}
+					onNewFolder={(f) => void newFolder(f)}
+					onCycleTheme={cycle}
+				/>
+			)}
 			<main className="main">
 				{error && (
 					<div className="error-banner" role="alert">
@@ -210,11 +223,25 @@ export function App(): React.JSX.Element {
 				{open ? (
 					<Editor
 						key={open.path}
+						title={noteTitle(open.path)}
 						initialValue={open.content}
 						onChange={onEditorChange}
+						onClose={() => void closeNote()}
+						onToggleFocus={() => setSidebarOpen((v) => !v)}
 					/>
 				) : (
 					<div className="placeholder">
+						{!sidebarOpen && (
+							<button
+								type="button"
+								className="icon-button placeholder-menu"
+								title="Show sidebar"
+								aria-label="Show sidebar"
+								onClick={() => setSidebarOpen(true)}
+							>
+								<Bars3Icon />
+							</button>
+						)}
 						<p>Select a note, or create one.</p>
 					</div>
 				)}

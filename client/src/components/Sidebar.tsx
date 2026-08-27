@@ -1,20 +1,16 @@
 import type { SaveState, TreeNode } from "../types";
 import type { ThemePreference } from "../useTheme";
-import { TreeItem } from "./TreeItem";
+import { DocumentPlusIcon } from "./icons/lists";
+import { Bars3Icon, FolderPlusIcon, MoonIcon } from "./icons/ui";
+import { Menu, MenuItem } from "./Menu";
+import { type TreeActions, TreeItem } from "./TreeItem";
 
-interface Props {
+interface Props extends TreeActions {
 	tree: TreeNode[];
 	selectedPath: string | null;
-	activeFolder: string;
 	expanded: Set<string>;
 	saveState: SaveState;
 	themePreference: ThemePreference;
-	onToggleFolder: (path: string) => void;
-	onSelectNote: (path: string) => void;
-	onRename: (node: TreeNode) => void;
-	onDelete: (node: TreeNode) => void;
-	onNewNote: () => void;
-	onNewFolder: () => void;
 	onCycleTheme: () => void;
 }
 
@@ -25,45 +21,55 @@ const SAVE_LABEL: Record<SaveState, string> = {
 	error: "Save failed",
 };
 
-const THEME_ICON: Record<ThemePreference, string> = {
-	system: "🖥",
-	light: "☀",
-	dark: "🌙",
+const THEME_LABEL: Record<ThemePreference, string> = {
+	system: "Theme: system",
+	light: "Theme: light",
+	dark: "Theme: dark",
 };
 
+/**
+ * Left pane: app title with a ☰ menu for root-level actions, then the
+ * folder/note tree. Per-node actions live on each row's ⋮ menu.
+ */
 export function Sidebar(props: Props): React.JSX.Element {
 	const { tree, saveState, themePreference } = props;
-	const folderHint = props.activeFolder === "" ? "root" : props.activeFolder;
 
 	return (
 		<aside className="sidebar">
 			<header className="sidebar-header">
 				<span className="app-title">vanillamd</span>
-				<button
-					type="button"
-					className="theme-toggle"
-					title={`Theme: ${themePreference} (click to change)`}
-					onClick={props.onCycleTheme}
-				>
-					{THEME_ICON[themePreference]}
-				</button>
+				<Menu label="Vault menu" icon={<Bars3Icon />}>
+					{(close) => (
+						<>
+							<MenuItem
+								icon={<DocumentPlusIcon />}
+								label="New note"
+								onClick={() => {
+									close();
+									props.onNewNote("");
+								}}
+							/>
+							<MenuItem
+								icon={<FolderPlusIcon />}
+								label="New folder"
+								onClick={() => {
+									close();
+									props.onNewFolder("");
+								}}
+							/>
+							<MenuItem
+								icon={<MoonIcon />}
+								label={THEME_LABEL[themePreference]}
+								onClick={props.onCycleTheme}
+							/>
+						</>
+					)}
+				</Menu>
 			</header>
-
-			<div className="toolbar">
-				<button type="button" onClick={props.onNewNote}>
-					+ Note
-				</button>
-				<button type="button" onClick={props.onNewFolder}>
-					+ Folder
-				</button>
-			</div>
-			<div className="toolbar-hint" title="New items are created here">
-				in: {folderHint}
-			</div>
 
 			<nav className="tree" aria-label="Notes">
 				{tree.length === 0 ? (
-					<p className="empty">No notes yet. Create one above.</p>
+					<p className="empty">No notes yet. Use ☰ to create one.</p>
 				) : (
 					<div className="tree-root" role="tree" aria-label="Notes">
 						{tree.map((node) => (
@@ -72,10 +78,11 @@ export function Sidebar(props: Props): React.JSX.Element {
 								node={node}
 								depth={0}
 								selectedPath={props.selectedPath}
-								activeFolder={props.activeFolder}
 								expanded={props.expanded}
 								onToggleFolder={props.onToggleFolder}
 								onSelectNote={props.onSelectNote}
+								onNewNote={props.onNewNote}
+								onNewFolder={props.onNewFolder}
 								onRename={props.onRename}
 								onDelete={props.onDelete}
 							/>
