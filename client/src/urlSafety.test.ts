@@ -54,12 +54,12 @@ describe("markdown URL scheme allowlist", () => {
 	});
 
 	it("is wired into the editor through the document-level sanitizer", async () => {
-		// Asserting only that Editor.tsx mentions the sanitizer would pass even
+		// Asserting only that useCrepe.ts mentions the sanitizer would pass even
 		// against wiring that has no effect, which is how the first attempt at this
 		// fix slipped through. The behavioural proof lives in
 		// urlSanitizerPlugin.test.ts; this just pins the wiring's shape.
 		const editor = await readFile(
-			resolve(import.meta.dirname, "components/Editor.tsx"),
+			resolve(import.meta.dirname, "useCrepe.ts"),
 			"utf8",
 		);
 		expect(editor).toContain("sanitizeDocUrls");

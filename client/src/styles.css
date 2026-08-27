@@ -1,39 +1,55 @@
 :root {
 	--bg: #ffffff;
-	--bg-elevated: #f7f7f7;
-	--bg-hover: #ececec;
-	--bg-selected: #e2e8f0;
-	--text: #1c1c1c;
+	--bg-elevated: #f3f4f6;
+	--bg-hover: #e5e7eb;
+	--bg-panel: #ffffff;
+	--bg-selected: #3b82f6;
+	--text: #111827;
+	--text-on-selected: #ffffff;
 	--text-muted: #6b7280;
-	--border: #e2e2e2;
+	--border: #d1d5db;
 	--accent: #2563eb;
 	--danger: #b91c1c;
-	--sidebar-width: 280px;
+	--sidebar-width: 300px;
+	--radius: 6px;
 	color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-	--bg: #1a1a1a;
-	--bg-elevated: #202020;
-	--bg-hover: #2a2a2a;
-	--bg-selected: #2f3b52;
-	--text: #e6e6e6;
+	--bg: #1a1c20;
+	--bg-elevated: #202327;
+	--bg-hover: #2c3037;
+	--bg-panel: #16181c;
+	--bg-selected: #3b82f6;
+	--text: #e5e7eb;
+	--text-on-selected: #ffffff;
 	--text-muted: #9ca3af;
-	--border: #303030;
+	--border: #3a3f47;
 	--accent: #60a5fa;
 	--danger: #f87171;
 	color-scheme: dark;
 }
 
+/* Crepe "frame" theme tweaks: system fonts, and align the body with the
+   title/toolbar column instead of the theme's own 120px gutter. */
+.milkdown {
+	--crepe-font-title: inherit;
+	--crepe-font-default: inherit;
+}
+
+.milkdown .ProseMirror {
+	padding: 12px 24px 60px;
+}
+
 /* Dark-mode overrides for the Milkdown Crepe "frame" theme. */
 :root[data-theme="dark"] .milkdown {
-	--crepe-color-background: #1a1a1a;
-	--crepe-color-on-background: #e6e6e6;
-	--crepe-color-surface: #121212;
-	--crepe-color-surface-low: #1c1c1c;
-	--crepe-color-on-surface: #d1d1d1;
-	--crepe-color-on-surface-variant: #a9a9a9;
-	--crepe-color-outline: #757575;
+	--crepe-color-background: #1a1c20;
+	--crepe-color-on-background: #e5e7eb;
+	--crepe-color-surface: #121416;
+	--crepe-color-surface-low: #1c1e22;
+	--crepe-color-on-surface: #d1d5db;
+	--crepe-color-on-surface-variant: #a3a8b0;
+	--crepe-color-outline: #6b7280;
 	--crepe-color-primary: #b5b5b5;
 	--crepe-color-secondary: #4d4d4d;
 	--crepe-color-on-secondary: #d6d6d6;
@@ -65,10 +81,86 @@ body {
 	color: var(--text);
 }
 
+button {
+	font: inherit;
+}
+
 .layout {
 	display: grid;
 	grid-template-columns: var(--sidebar-width) 1fr;
 	height: 100%;
+}
+
+.layout.sidebar-hidden {
+	grid-template-columns: 1fr;
+}
+
+/* ---- Shared controls ---- */
+.icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+	border: none;
+	border-radius: var(--radius);
+	background: none;
+	color: var(--text);
+	cursor: pointer;
+	font-size: 20px;
+	line-height: 1;
+}
+
+.icon-button:hover,
+.icon-button.is-open {
+	background: var(--bg-hover);
+}
+
+/* ---- Menu (dropdown) ---- */
+.menu {
+	position: relative;
+}
+
+.menu-panel {
+	position: absolute;
+	top: 100%;
+	right: 0;
+	z-index: 30;
+	min-width: 10rem;
+	margin-top: 4px;
+	padding: 6px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-panel);
+	box-shadow: 0 10px 25px rgb(0 0 0 / 0.25);
+}
+
+.menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 8px;
+	border: none;
+	border-radius: var(--radius);
+	background: none;
+	color: var(--text);
+	font-size: 14px;
+	text-align: left;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.menu-item svg {
+	font-size: 18px;
+	opacity: 0.8;
+}
+
+.menu-item:hover {
+	background: var(--bg-hover);
+}
+
+.menu-item.is-danger:hover {
+	color: var(--danger);
 }
 
 /* ---- Sidebar ---- */
@@ -78,56 +170,23 @@ body {
 	min-height: 0;
 	background: var(--bg-elevated);
 	border-inline-end: 1px solid var(--border);
+	font-size: 14px;
 }
 
 .sidebar-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 12px 14px;
-	border-bottom: 1px solid var(--border);
+	gap: 8px;
+	padding: 14px 16px;
 }
 
 .app-title {
-	font-weight: 700;
-	letter-spacing: 0.02em;
-}
-
-.theme-toggle {
-	background: none;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	cursor: pointer;
-	padding: 2px 8px;
-	font-size: 14px;
-	color: var(--text);
-}
-
-.toolbar {
-	display: flex;
-	gap: 8px;
-	padding: 10px 14px 4px;
-}
-
-.toolbar button {
 	flex: 1;
-	padding: 6px 8px;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	background: var(--bg);
-	color: var(--text);
-	cursor: pointer;
-	font-size: 13px;
-}
-
-.toolbar button:hover {
-	background: var(--bg-hover);
-}
-
-.toolbar-hint {
-	padding: 2px 14px 8px;
-	font-size: 11px;
-	color: var(--text-muted);
+	min-width: 0;
+	padding-left: 4px;
+	font-size: 18px;
+	font-weight: 600;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -135,31 +194,39 @@ body {
 
 .tree {
 	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
-	padding: 4px 0;
+	padding: 0 16px 16px;
 }
 
 .empty {
-	padding: 12px 16px;
+	padding: 4px;
 	color: var(--text-muted);
 	font-size: 13px;
 }
 
-.tree-root,
-.tree-children {
-	list-style: none;
+.tree-root {
 	margin: 0;
 	padding: 0;
 }
 
+/* Indent guide: every nested level draws a rule down its left edge. */
+.tree-children {
+	margin-left: 12px;
+	padding-left: 8px;
+	border-left: 2px solid var(--border);
+}
+
 .tree-row {
+	position: relative;
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 4px 8px;
+	padding-left: 4px;
+	border-radius: var(--radius);
 	cursor: pointer;
-	font-size: 14px;
 	user-select: none;
+	outline-offset: -2px;
+	transition: background-color 120ms;
 }
 
 .tree-row:hover {
@@ -168,13 +235,28 @@ body {
 
 .tree-row.is-selected {
 	background: var(--bg-selected);
+	color: var(--text-on-selected);
+}
+
+.tree-row-main {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 0;
 }
 
 .tree-icon {
-	width: 14px;
-	text-align: center;
-	color: var(--text-muted);
+	display: inline-flex;
 	flex: none;
+	font-size: 16px;
+	opacity: 0.7;
+	transition: transform 120ms;
+}
+
+.tree-icon.is-collapsed {
+	transform: rotate(-90deg);
 }
 
 .tree-label {
@@ -184,32 +266,28 @@ body {
 	text-overflow: ellipsis;
 }
 
-.tree-actions {
-	display: none;
-	gap: 2px;
+.tree-menu .menu-trigger {
+	padding: 2px;
+	opacity: 0;
+	color: inherit;
+	transition: opacity 120ms;
 }
 
-.tree-row:hover .tree-actions {
-	display: inline-flex;
+.tree-row:hover .tree-menu .menu-trigger,
+.tree-menu .menu-trigger:focus-visible,
+.tree-menu .menu-trigger.is-open {
+	opacity: 1;
 }
 
-.tree-actions button {
-	border: none;
-	background: none;
-	cursor: pointer;
-	color: var(--text-muted);
-	padding: 0 4px;
-	font-size: 12px;
-}
-
-.tree-actions button:hover {
-	color: var(--text);
+@media (hover: none) {
+	.tree-menu .menu-trigger {
+		opacity: 1;
+	}
 }
 
 .sidebar-footer {
-	border-top: 1px solid var(--border);
-	padding: 8px 14px;
-	min-height: 32px;
+	padding: 6px 16px;
+	min-height: 28px;
 	font-size: 12px;
 }
 
@@ -225,23 +303,194 @@ body {
 	color: var(--accent);
 }
 
-/* ---- Main / editor ---- */
+/* ---- Main / note pane ---- */
 .main {
 	position: relative;
+	display: flex;
+	flex-direction: column;
 	min-width: 0;
-	overflow-y: auto;
+	min-height: 0;
 	background: var(--bg);
 }
 
 .placeholder {
+	position: relative;
 	height: 100%;
 	display: grid;
 	place-items: center;
 	color: var(--text-muted);
 }
 
-.editor-host {
-	min-height: 100%;
+.placeholder-menu {
+	position: absolute;
+	top: 14px;
+	left: 16px;
+}
+
+.note-pane {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+
+.note-header,
+.editor-toolbar {
+	flex: none;
+	width: 100%;
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 0 24px;
+}
+
+.note-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-top: 14px;
+	padding-bottom: 10px;
+}
+
+.note-title {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	font-size: 20px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.note-header-actions {
+	display: flex;
+	gap: 2px;
+}
+
+/* ---- Editor toolbar ---- */
+.editor-toolbar {
+	display: flex;
+	justify-content: space-between;
+	gap: 4px;
+	padding-bottom: 8px;
+}
+
+.tb-group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.tb-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 34px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: none;
+	color: var(--text);
+	font-size: 18px;
+	cursor: pointer;
+	transition: background-color 120ms;
+}
+
+.tb-button:hover:enabled {
+	background: var(--bg-hover);
+}
+
+.tb-button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.tb-button.is-active {
+	background: var(--bg-selected);
+	border-color: var(--bg-selected);
+	color: var(--text-on-selected);
+}
+
+.tb-menu {
+	position: relative;
+}
+
+.tb-dropdown {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	z-index: 30;
+	display: none;
+	flex-direction: column;
+	padding: 6px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-panel);
+	box-shadow: 0 10px 25px rgb(0 0 0 / 0.25);
+}
+
+/* Hover/focus reveal, like many-notes' hover menus. The padding-top bridge
+   keeps the menu open while the pointer crosses the gap from the button. */
+.tb-menu::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 100%;
+	height: 6px;
+}
+
+.tb-menu:hover .tb-dropdown,
+.tb-menu:focus-within .tb-dropdown {
+	display: flex;
+}
+
+.tb-row {
+	display: flex;
+}
+
+.tb-sub-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 32px;
+	border: none;
+	border-radius: var(--radius);
+	background: none;
+	color: var(--text);
+	font-size: 18px;
+	cursor: pointer;
+}
+
+.tb-sub-button:hover {
+	background: var(--bg-hover);
+}
+
+/* ---- Editing surfaces ---- */
+.editor-host,
+.raw-editor {
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	max-width: 1080px;
+	margin: 0 auto;
+	overflow-y: auto;
+}
+
+.raw-editor {
+	display: block;
+	padding: 12px 24px;
+	border: none;
+	outline: none;
+	resize: none;
+	background: transparent;
+	color: var(--text);
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	font-size: 14px;
+	line-height: 1.6;
 }
 
 .error-banner {

@@ -107,7 +107,7 @@ describe("initial document load", () => {
 	it("is sanitized by the plugin once a transaction is dispatched", () => {
 		// Milkdown mounts the view straight from EditorState.create, and
 		// appendTransaction only runs inside applyTransaction — so a doc parsed
-		// from `defaultValue` reaches first paint untouched. Editor.tsx dispatches
+		// from `defaultValue` reaches first paint untouched. useCrepe.ts dispatches
 		// one empty transaction after create() to close that window; this pins the
 		// behaviour that makes the flush work.
 		const plugin = new Plugin({
@@ -125,16 +125,16 @@ describe("initial document load", () => {
 		// Before any dispatch the raw URL is still present — this is the window.
 		expect(renderedAttrs(state.doc).href).toBe("javascript:alert(1)");
 
-		// The empty transaction Editor.tsx dispatches after create().
+		// The empty transaction useCrepe.ts dispatches after create().
 		const flushed = state.apply(state.tr);
 		const attrs = renderedAttrs(flushed.doc);
 		expect(attrs.href).toBe(SAFE_FALLBACK_URL);
 		expect(attrs.src).toBe(SAFE_FALLBACK_URL);
 	});
 
-	it("is wired to flush on create in Editor.tsx", async () => {
+	it("is wired to flush on create in useCrepe.ts", async () => {
 		const editor = await readFile(
-			resolve(import.meta.dirname, "components/Editor.tsx"),
+			resolve(import.meta.dirname, "useCrepe.ts"),
 			"utf8",
 		);
 		expect(editor).toContain("view.dispatch(view.state.tr)");

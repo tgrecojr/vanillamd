@@ -37,8 +37,15 @@ Run the full gate before pushing: `npm run lint && npm run typecheck && npm test
 - `server/src/routes.ts` — thin `/api` handlers; validation lives in NoteService.
 - `server/src/app.ts` — Fastify wiring: helmet, error mapping, static SPA + fallback.
 - `client/src/App.tsx` — orchestrates tree state, selection, autosave.
-- `client/src/components/Editor.tsx` — Milkdown Crepe wrapper (uncontrolled;
-  remounted per note via React `key`).
+- `client/src/components/Editor.tsx` — note pane: title bar, `EditorToolbar`,
+  and the editing surface (Crepe WYSIWYG or a raw-markdown textarea).
+  Remounted per note via React `key`.
+- `client/src/useCrepe.ts` — mounts Milkdown Crepe (uncontrolled) and exposes
+  `run(action)` so the toolbar can drive it. URL sanitizer is wired here.
+- `client/src/components/editorCommands.ts` — every toolbar action as a
+  Milkdown `Ctx` function (headings, lists, tables, …). Toolbar is UI only.
+- `client/src/components/Sidebar.tsx` / `TreeItem.tsx` — many-notes-style tree:
+  chevrons, indent guides, per-row ⋮ menu; root actions under the ☰ menu.
 - `client/src/useAutosave.ts` — debounced save; flushes on note switch / tab hide.
 
 ## Security rules (do not regress)

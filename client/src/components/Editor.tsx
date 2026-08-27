@@ -1,92 +1,120 @@
-import { Crepe } from "@milkdown/crepe";
-import { editorViewCtx } from "@milkdown/kit/core";
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
-import { $prose } from "@milkdown/kit/utils";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useCrepe } from "../useCrepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
-import { sanitizeDocUrls } from "../urlSanitizerPlugin";
-import { buildToolbar } from "./editorToolbar";
+import { EditorToolbar } from "./EditorToolbar";
+import type { EditorAction } from "./editorCommands";
+import { FullscreenIcon, XMarkIcon } from "./icons/ui";
 
 interface Props {
+	/** Display name of the open note (file name without `.md`). */
+	title: string;
 	/** Initial markdown for this note. Read once on mount; remount via `key`. */
 	initialValue: string;
 	onChange: (markdown: string) => void;
+	onClose: () => void;
+	onToggleFocus: () => void;
 }
 
 /**
- * Milkdown Crepe WYSIWYG editor. Uncontrolled after mount: the parent gives it
- * the loaded markdown once (and remounts it with a `key` when switching notes),
- * then receives every edit through `onChange`.
+ * Note pane: title bar, formatting toolbar, and the editing surface — either
+ * the Milkdown Crepe WYSIWYG editor or, in raw mode, a plain textarea over the
+ * same markdown. Switching modes hands the latest text across, so edits made
+ * in either survive the swap.
  */
-export function Editor({ initialValue, onChange }: Props): React.JSX.Element {
-	const hostRef = useRef<HTMLDivElement>(null);
-	const initialRef = useRef(initialValue);
-	const onChangeRef = useRef(onChange);
-	onChangeRef.current = onChange;
+export function Editor(props: Props): React.JSX.Element {
+	const { onChange } = props;
+	const [rawMode, setRawMode] = useState(false);
+	// Remount key for the WYSIWYG editor; bumped when leaving raw mode so
+	// Crepe reloads whatever the textarea now holds.
+	const [generation, setGeneration] = useState(0);
+	const latest = useRef(props.initialValue);
 
-	useEffect(() => {
-		const host = hostRef.current;
-		if (!host) return;
+	const handleChange = useCallback(
+		(markdown: string): void => {
+			latest.current = markdown;
+			onChange(markdown);
+		},
+		[onChange],
+	);
 
-		const crepe = new Crepe({
-			root: host,
-			defaultValue: initialRef.current,
-			featureConfigs: {
-				[Crepe.Feature.Toolbar]: { buildToolbar },
-			},
-		});
-		// Note bodies are arbitrary markdown, so their link/image URLs are
-		// untrusted input to the DOM. Hold them to a scheme allowlist so the CSP is
-		// a second layer rather than the only thing preventing a javascript: URL
-		// from executing.
-		//
-		// This sanitizes the document model rather than the rendered attributes.
-		// The commonmark preset spreads a mark's raw attrs into its DOM output
-		// AFTER the configured attribute getter, so overriding that getter is
-		// silently discarded one property later. Rewriting the model is what makes
-		// the spread carry a safe value.
-		crepe.editor.use(
-			$prose(
-				() =>
-					new Plugin({
-						key: new PluginKey("vanillamd-url-sanitizer"),
-						appendTransaction: (_transactions, _oldState, newState) => {
-							const tr = newState.tr;
-							return sanitizeDocUrls(newState.doc, tr) ? tr : null;
-						},
-					}),
-			),
-		);
+	const toggleRaw = (): void => {
+		if (rawMode) setGeneration((g) => g + 1);
+		setRawMode((v) => !v);
+	};
 
-		crepe.on((listener) => {
-			listener.markdownUpdated((_ctx, markdown) => {
-				onChangeRef.current(markdown);
-			});
-		});
-		crepe
-			.create()
-			.then(() => {
-				// appendTransaction only runs when a transaction is dispatched, and
-				// Milkdown mounts the view straight from EditorState.create — so the
-				// document parsed from `defaultValue` reaches first paint unsanitized.
-				// Dispatch one empty transaction to force the plugin over the initial
-				// content before the user can interact with it.
-				crepe.editor.action((ctx) => {
-					const view = ctx.get(editorViewCtx);
-					view.dispatch(view.state.tr);
-				});
-			})
-			.catch((err) => {
-				console.error("Editor failed to initialize", err);
-			});
-
-		return () => {
-			crepe.destroy().catch(() => {
-				/* editor already torn down */
-			});
-		};
+	const surfaceRef = useRef<{ run: (a: EditorAction) => void } | null>(null);
+	const run = useCallback((action: EditorAction): void => {
+		surfaceRef.current?.run(action);
 	}, []);
 
+	return (
+		<div className="note-pane">
+			<header className="note-header">
+				<h1 className="note-title" title={props.title}>
+					{props.title}
+				</h1>
+				<div className="note-header-actions">
+					<button
+						type="button"
+						className="icon-button"
+						title="Toggle sidebar"
+						aria-label="Toggle sidebar"
+						onClick={props.onToggleFocus}
+					>
+						<FullscreenIcon />
+					</button>
+					<button
+						type="button"
+						className="icon-button"
+						title="Close note"
+						aria-label="Close note"
+						onClick={props.onClose}
+					>
+						<XMarkIcon />
+					</button>
+				</div>
+			</header>
+
+			<EditorToolbar run={run} rawMode={rawMode} onToggleRaw={toggleRaw} />
+
+			{rawMode ? (
+				<textarea
+					className="raw-editor"
+					aria-label="Markdown source"
+					defaultValue={latest.current}
+					spellCheck={false}
+					onChange={(e) => handleChange(e.target.value)}
+				/>
+			) : (
+				<Wysiwyg
+					key={generation}
+					initialValue={latest.current}
+					onChange={handleChange}
+					surfaceRef={surfaceRef}
+				/>
+			)}
+		</div>
+	);
+}
+
+interface WysiwygProps {
+	initialValue: string;
+	onChange: (markdown: string) => void;
+	surfaceRef: React.RefObject<{ run: (a: EditorAction) => void } | null>;
+}
+
+function Wysiwyg({
+	initialValue,
+	onChange,
+	surfaceRef,
+}: WysiwygProps): React.JSX.Element {
+	const { hostRef, run } = useCrepe(initialValue, onChange);
+	useEffect(() => {
+		surfaceRef.current = { run };
+		return () => {
+			surfaceRef.current = null;
+		};
+	}, [surfaceRef, run]);
 	return <div className="editor-host" ref={hostRef} />;
 }
