@@ -208,16 +208,18 @@ describe("HTTP API", () => {
 		}
 	});
 
-	it("parses TRUST_PROXY into hop counts and address lists", () => {
+	it("parses TRUST_PROXY into address lists and rejects hop counts", () => {
 		expect(parseTrustProxy(undefined)).toBe(false);
 		expect(parseTrustProxy("")).toBe(false);
 		expect(parseTrustProxy("false")).toBe(false);
 		expect(parseTrustProxy("true")).toBe(true);
-		expect(parseTrustProxy("1")).toBe(1);
 		expect(parseTrustProxy("10.0.0.0/8, 192.168.1.1")).toEqual([
 			"10.0.0.0/8",
 			"192.168.1.1",
 		]);
+		// Fastify 5.12+ silently trusts nobody for a numeric hop count, which
+		// would leave an operator logging the tunnel IP without noticing.
+		expect(() => parseTrustProxy("1")).toThrow(/hop counts/);
 	});
 
 	it("bounds request duration, socket count and request rate", async () => {
