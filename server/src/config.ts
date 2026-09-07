@@ -28,27 +28,32 @@ export interface Config {
 	maxEntries: number;
 	/**
 	 * Which peers may set X-Forwarded-*. `false` trusts nobody (the default);
-	 * a hop count or a list of proxy addresses/CIDRs scopes trust to the known
-	 * fronting proxy. Never `true` by default — request.ip is the only client
-	 * identifier in the logs, so trusting any peer makes it attacker-chosen.
+	 * a list of proxy addresses/CIDRs scopes trust to the known fronting proxy.
+	 * Never `true` by default — request.ip is the only client identifier in the
+	 * logs, so trusting any peer makes it attacker-chosen.
 	 */
-	trustProxy: boolean | number | string[];
+	trustProxy: boolean | string[];
 }
 
 /**
- * Parse TRUST_PROXY into a Fastify `trustProxy` value. Accepts a hop count
- * ("1"), a comma-separated address/CIDR list ("10.0.0.0/8, 192.168.1.1"), or
- * the literals "true"/"false". Anything unset or empty means trust nobody.
+ * Parse TRUST_PROXY into a Fastify `trustProxy` value. Accepts a
+ * comma-separated address/CIDR list ("10.0.0.0/8, 192.168.1.1") or the
+ * literals "true"/"false". Anything unset or empty means trust nobody.
+ *
+ * Hop counts ("1") are rejected: a hop-count check cannot validate the
+ * immediate peer, so Fastify 5.12+ treats a number as "trust nobody". Failing
+ * at startup is better than silently logging the tunnel's IP as the client.
  */
-export function parseTrustProxy(
-	raw: string | undefined,
-): boolean | number | string[] {
+export function parseTrustProxy(raw: string | undefined): boolean | string[] {
 	const value = (raw ?? "").trim();
 	if (value === "" || value === "false") return false;
 	if (value === "true") return true;
 
-	const hops = Number.parseInt(value, 10);
-	if (String(hops) === value && hops >= 0) return hops;
+	if (/^\d+$/.test(value)) {
+		throw new Error(
+			`Invalid value for TRUST_PROXY: ${value} (hop counts are not supported; use an address/CIDR list)`,
+		);
+	}
 
 	const list = value
 		.split(",")
