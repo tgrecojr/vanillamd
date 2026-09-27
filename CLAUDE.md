@@ -47,6 +47,9 @@ Run the full gate before pushing: `npm run lint && npm run typecheck && npm test
 - `client/src/components/Sidebar.tsx` / `TreeItem.tsx` — many-notes-style tree:
   chevrons, indent guides, per-row ⋮ menu; root actions under the ☰ menu.
 - `client/src/useAutosave.ts` — debounced save; flushes on note switch / tab hide.
+- `client/src/cleanMarkdown.ts` — copy-out form of a note: strips Milkdown's
+  `<br />` empty-paragraph placeholders. Used by `CopyMarkdownButton` in the
+  note header; never changes what is saved.
 
 ## Security rules (do not regress)
 

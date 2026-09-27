@@ -165,6 +165,58 @@ export const MoonIcon = (p: P) => (
 		/>
 	</svg>
 );
+export const ClipboardIcon = (p: P) => (
+	<svg
+		{...base}
+		{...p}
+		aria-hidden="true"
+		fill="none"
+		strokeWidth="1.5"
+		stroke="currentColor"
+		strokeLinecap="round"
+		strokeLinejoin="round"
+		viewBox="0 0 24 24"
+		xmlns="http://www.w3.org/2000/svg"
+	>
+		<rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+		<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+	</svg>
+);
+export const CheckIcon = (p: P) => (
+	<svg
+		{...base}
+		{...p}
+		aria-hidden="true"
+		fill="none"
+		strokeWidth="1.5"
+		stroke="currentColor"
+		viewBox="0 0 24 24"
+		xmlns="http://www.w3.org/2000/svg"
+	>
+		<path
+			d="m4.5 12.75 6 6 9-13.5"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		></path>
+	</svg>
+);
+export const AlertCircleIcon = (p: P) => (
+	<svg
+		{...base}
+		{...p}
+		aria-hidden="true"
+		fill="none"
+		strokeWidth="1.5"
+		stroke="currentColor"
+		strokeLinecap="round"
+		strokeLinejoin="round"
+		viewBox="0 0 24 24"
+		xmlns="http://www.w3.org/2000/svg"
+	>
+		<circle cx="12" cy="12" r="10" />
+		<path d="M12 8v4m0 4h.01" />
+	</svg>
+);
 export const FullscreenIcon = (p: P) => (
 	<svg
 		{...base}

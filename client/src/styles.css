@@ -115,6 +115,14 @@ button {
 	background: var(--bg-hover);
 }
 
+.copy-button.is-copied {
+	color: var(--accent);
+}
+
+.copy-button.is-failed {
+	color: var(--danger);
+}
+
 /* ---- Menu (dropdown) ---- */
 .menu {
 	position: relative;

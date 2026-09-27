@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCrepe } from "../useCrepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
+import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { EditorToolbar } from "./EditorToolbar";
 import type { EditorAction } from "./editorCommands";
 import { FullscreenIcon, XMarkIcon } from "./icons/ui";
@@ -43,6 +44,8 @@ export function Editor(props: Props): React.JSX.Element {
 		setRawMode((v) => !v);
 	};
 
+	const getMarkdown = useCallback((): string => latest.current, []);
+
 	const surfaceRef = useRef<{ run: (a: EditorAction) => void } | null>(null);
 	const run = useCallback((action: EditorAction): void => {
 		surfaceRef.current?.run(action);
@@ -55,6 +58,7 @@ export function Editor(props: Props): React.JSX.Element {
 					{props.title}
 				</h1>
 				<div className="note-header-actions">
+					<CopyMarkdownButton getMarkdown={getMarkdown} />
 					<button
 						type="button"
 						className="icon-button"
