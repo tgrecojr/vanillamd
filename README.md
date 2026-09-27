@@ -10,6 +10,9 @@ no linking, no calendars — just notes.
   directory. Point it at any folder and open the notes in any other editor too.
 - **Autosave.** Edits are saved automatically a moment after you stop typing.
   There is no save button.
+- **Copy as Markdown.** One button copies the whole note to the clipboard as
+  plain Markdown, without the `<br />` placeholders the editor uses to keep
+  empty lines.
 - **Single user, single container, mapped volume** for storage.
 
 ## Security model
