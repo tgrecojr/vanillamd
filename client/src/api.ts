@@ -12,10 +12,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(input, {
-		...init,
-		headers: { "Content-Type": "application/json", ...init?.headers },
-	});
+	// Only declare a JSON body when one is actually sent: Fastify rejects a
+	// bodyless request (GET/DELETE) that claims `application/json`.
+	const headers: HeadersInit = init?.body
+		? { "Content-Type": "application/json", ...init.headers }
+		: { ...init?.headers };
+	const res = await fetch(input, { ...init, headers });
 	if (!res.ok) {
 		let message = res.statusText;
 		try {
