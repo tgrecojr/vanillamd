@@ -63,3 +63,12 @@ Run the full gate before pushing: `npm run lint && npm run typecheck && npm test
 
 `DATA_DIR`, `PORT`, `HOST`, `MAX_NOTE_BYTES`, `LOG_LEVEL`. See `env.example`.
 Copy it to `.env` for local dev (`.env` is gitignored; never commit it).
+
+## Dependency notes
+
+- `katex` is a root `dependencies` entry even though only Milkdown Crepe uses
+  it. The root `overrides.katex` is `$katex`, which npm only resolves against
+  root dependencies. This keeps one katex copy (micromark-extension-math still
+  pins ^0.16) and lets Renovate bump katex as a normal dependency. Bumping the
+  override range directly made Renovate emit a lockfile with katex missing
+  entirely (PR #40).
