@@ -216,16 +216,12 @@ export function EditorToolbar({
 			</div>
 
 			<div className="tb-group">
-				<button
-					type="button"
-					className={`tb-button${rawMode ? " is-active" : ""}`}
+				<ToolbarButton
 					title={rawMode ? "Back to visual editor" : "Edit raw markdown"}
-					aria-label={rawMode ? "Back to visual editor" : "Edit raw markdown"}
-					aria-pressed={rawMode}
+					icon={<MarkdownIcon />}
+					pressed={rawMode}
 					onClick={onToggleRaw}
-				>
-					<MarkdownIcon />
-				</button>
+				/>
 			</div>
 		</div>
 	);

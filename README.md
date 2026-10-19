@@ -13,6 +13,9 @@ no linking, no calendars — just notes.
 - **Copy as Markdown.** One button copies the whole note to the clipboard as
   plain Markdown, without the `<br />` placeholders the editor uses to keep
   empty lines.
+- **Works on a phone.** On narrow screens the folder tree becomes a slide-in
+  drawer, the toolbar menus open with a tap, and the editor shrinks to fit
+  above the on-screen keyboard instead of hiding behind it.
 - **Single user, single container, mapped volume** for storage.
 
 ## Security model
@@ -86,6 +89,8 @@ See [`env.example`](./env.example). All have working defaults.
 - `server/` — Fastify (TypeScript) API + serves the built SPA. File I/O is
   confined to `DATA_DIR`. See `src/paths.ts` (path safety) and `src/notes.ts`.
 - `client/` — React + Milkdown SPA. Tree on the left, editor on the right,
-  debounced autosave.
+  debounced autosave. At phone widths (≤768px) the tree becomes an overlay
+  drawer and the app shell tracks the visual viewport so the iOS keyboard
+  shrinks the editor rather than covering the toolbar.
 
 One container runs the server, which both serves the API and the static client.

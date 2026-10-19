@@ -79,6 +79,10 @@ body {
 		sans-serif;
 	background: var(--bg);
 	color: var(--text);
+	/* The panes scroll internally; the page itself never should. */
+	overflow: hidden;
+	overscroll-behavior: none;
+	-webkit-text-size-adjust: 100%;
 }
 
 button {
@@ -439,7 +443,9 @@ button {
 }
 
 /* Hover/focus reveal, like many-notes' hover menus. The padding-top bridge
-   keeps the menu open while the pointer crosses the gap from the button. */
+   keeps the menu open while the pointer crosses the gap from the button.
+   Hover is gated to pointer devices: iOS emulates :hover on tap, which would
+   leave menus stuck open. Touch users open them with a tap (`.is-open`). */
 .tb-menu::after {
 	content: "";
 	position: absolute;
@@ -449,8 +455,14 @@ button {
 	height: 6px;
 }
 
-.tb-menu:hover .tb-dropdown,
-.tb-menu:focus-within .tb-dropdown {
+@media (hover: hover) {
+	.tb-menu:hover .tb-dropdown {
+		display: flex;
+	}
+}
+
+.tb-menu:focus-within .tb-dropdown,
+.tb-menu.is-open .tb-dropdown {
 	display: flex;
 }
 
@@ -519,4 +531,133 @@ button {
 	background: none;
 	color: inherit;
 	cursor: pointer;
+}
+
+/* ---- Touch devices ---- */
+@media (hover: none) {
+	/* Crepe's hover-only drag handle has no role on a touchscreen and would
+	   otherwise pop up wherever a block was last tapped. */
+	.milkdown .milkdown-block-handle {
+		display: none;
+	}
+
+	.tree-menu .menu-trigger {
+		padding: 6px;
+	}
+}
+
+/* ---- Phone layout ---- */
+@media (max-width: 768px) {
+	/* Pin the shell to the *visual* viewport (see useVisualViewportVars) so
+	   the on-screen keyboard shrinks the editor instead of hiding the toolbar
+	   behind it. */
+	.layout {
+		position: fixed;
+		top: var(--app-top, 0px);
+		left: 0;
+		right: 0;
+		height: var(--app-height, 100dvh);
+		grid-template-columns: 1fr;
+	}
+
+	/* The sidebar becomes a drawer over the note rather than a column. */
+	.sidebar-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 40;
+		background: rgb(0 0 0 / 0.4);
+	}
+
+	.sidebar {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 50;
+		width: min(85vw, 320px);
+		padding-top: env(safe-area-inset-top);
+		padding-left: env(safe-area-inset-left);
+		box-shadow: 0 0 40px rgb(0 0 0 / 0.35);
+	}
+
+	.sidebar-footer {
+		padding-bottom: calc(6px + env(safe-area-inset-bottom));
+	}
+
+	.main {
+		padding-left: env(safe-area-inset-left);
+		padding-right: env(safe-area-inset-right);
+	}
+
+	.placeholder-menu {
+		top: calc(10px + env(safe-area-inset-top));
+	}
+
+	.note-header,
+	.editor-toolbar {
+		padding-left: 12px;
+		padding-right: 12px;
+	}
+
+	.note-header {
+		padding-top: calc(8px + env(safe-area-inset-top));
+		padding-bottom: 6px;
+		gap: 8px;
+	}
+
+	.note-title {
+		font-size: 18px;
+	}
+
+	.editor-toolbar {
+		gap: 8px;
+		padding-bottom: 6px;
+	}
+
+	/* Fit the full toolbar on one row of a 375px screen. */
+	.tb-button {
+		width: 38px;
+		height: 38px;
+	}
+
+	.tb-sub-button {
+		width: 40px;
+		height: 38px;
+	}
+
+	/* Menus near the right edge open leftwards so they stay on screen. */
+	.tb-group > .tb-menu:nth-last-child(-n + 2) .tb-dropdown {
+		left: auto;
+		right: 0;
+	}
+
+	/* Bigger tap targets in the tree and header. */
+	.icon-button {
+		padding: 8px;
+	}
+
+	.tree-row-main {
+		padding: 9px 0;
+	}
+
+	.menu-item {
+		padding: 10px 12px;
+		font-size: 15px;
+	}
+
+	.milkdown .ProseMirror {
+		/* Extra bottom room keeps the caret clear of the keyboard when typing
+		   at the end of a note. */
+		padding: 8px 12px 40vh;
+	}
+
+	.raw-editor {
+		padding: 8px 12px calc(40vh + env(safe-area-inset-bottom));
+		/* iOS Safari zooms the page into any field smaller than 16px. */
+		font-size: 16px;
+	}
+
+	.error-banner {
+		margin: 8px 12px;
+	}
 }

@@ -47,6 +47,11 @@ Run the full gate before pushing: `npm run lint && npm run typecheck && npm test
 - `client/src/components/Sidebar.tsx` / `TreeItem.tsx` — many-notes-style tree:
   chevrons, indent guides, per-row ⋮ menu; root actions under the ☰ menu.
 - `client/src/useAutosave.ts` — debounced save; flushes on note switch / tab hide.
+- `client/src/useViewport.ts` — `useMediaQuery` (phone breakpoint; sidebar
+  becomes an overlay drawer) and `useVisualViewportVars` (mirrors the visual
+  viewport into `--app-height`/`--app-top` so the iOS keyboard shrinks the
+  editor instead of covering the toolbar). Phone styles live under the
+  `max-width: 768px` and `hover: none` media queries in `styles.css`.
 - `client/src/cleanMarkdown.ts` — copy-out form of a note: strips Milkdown's
   `<br />` empty-paragraph placeholders. Used by `CopyMarkdownButton` in the
   note header; never changes what is saved.
