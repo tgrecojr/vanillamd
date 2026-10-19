@@ -1,7 +1,7 @@
 import type { SaveState, TreeNode } from "../types";
 import type { ThemePreference } from "../useTheme";
 import { DocumentPlusIcon } from "./icons/lists";
-import { Bars3Icon, FolderPlusIcon, MoonIcon } from "./icons/ui";
+import { Bars3Icon, FolderPlusIcon, MoonIcon, XMarkIcon } from "./icons/ui";
 import { Menu, MenuItem } from "./Menu";
 import { type TreeActions, TreeItem } from "./TreeItem";
 
@@ -12,6 +12,8 @@ interface Props extends TreeActions {
 	saveState: SaveState;
 	themePreference: ThemePreference;
 	onCycleTheme: () => void;
+	/** When set (phone layout), renders a ✕ that dismisses the drawer. */
+	onClose?: () => void;
 }
 
 const SAVE_LABEL: Record<SaveState, string> = {
@@ -32,7 +34,7 @@ const THEME_LABEL: Record<ThemePreference, string> = {
  * folder/note tree. Per-node actions live on each row's ⋮ menu.
  */
 export function Sidebar(props: Props): React.JSX.Element {
-	const { tree, saveState, themePreference } = props;
+	const { tree, saveState, themePreference, onClose } = props;
 
 	return (
 		<aside className="sidebar">
@@ -65,6 +67,17 @@ export function Sidebar(props: Props): React.JSX.Element {
 						</>
 					)}
 				</Menu>
+				{onClose && (
+					<button
+						type="button"
+						className="icon-button"
+						title="Hide sidebar"
+						aria-label="Hide sidebar"
+						onClick={onClose}
+					>
+						<XMarkIcon />
+					</button>
+				)}
 			</header>
 
 			<nav className="tree" aria-label="Notes">

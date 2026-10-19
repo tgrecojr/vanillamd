@@ -5,7 +5,7 @@ import "@milkdown/crepe/theme/frame.css";
 import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { EditorToolbar } from "./EditorToolbar";
 import type { EditorAction } from "./editorCommands";
-import { FullscreenIcon, XMarkIcon } from "./icons/ui";
+import { Bars3Icon, FullscreenIcon, XMarkIcon } from "./icons/ui";
 
 interface Props {
 	/** Display name of the open note (file name without `.md`). */
@@ -15,6 +15,8 @@ interface Props {
 	onChange: (markdown: string) => void;
 	onClose: () => void;
 	onToggleFocus: () => void;
+	/** Phone layout: the sidebar toggle reads as a ☰ drawer button. */
+	mobile?: boolean;
 }
 
 /**
@@ -66,7 +68,7 @@ export function Editor(props: Props): React.JSX.Element {
 						aria-label="Toggle sidebar"
 						onClick={props.onToggleFocus}
 					>
-						<FullscreenIcon />
+						{props.mobile ? <Bars3Icon /> : <FullscreenIcon />}
 					</button>
 					<button
 						type="button"

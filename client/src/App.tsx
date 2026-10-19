@@ -6,6 +6,11 @@ import { Sidebar } from "./components/Sidebar";
 import type { TreeNode } from "./types";
 import { useAutosave } from "./useAutosave";
 import { useTheme } from "./useTheme";
+import {
+	MOBILE_QUERY,
+	useMediaQuery,
+	useVisualViewportVars,
+} from "./useViewport";
 
 interface OpenNote {
 	path: string;
@@ -38,6 +43,10 @@ export function App(): React.JSX.Element {
 
 	const { state: saveState, schedule, flush } = useAutosave();
 	const { preference, cycle } = useTheme();
+	// On phones the sidebar is an overlay drawer, so it gets out of the way as
+	// soon as a note is chosen.
+	const isMobile = useMediaQuery(MOBILE_QUERY);
+	useVisualViewportVars();
 
 	const fail = useCallback((err: unknown): void => {
 		const message =
@@ -76,11 +85,12 @@ export function App(): React.JSX.Element {
 				await flush();
 				const content = await api.getNote(path);
 				setOpen({ path, content });
+				if (isMobile) setSidebarOpen(false);
 			} catch (err) {
 				fail(err);
 			}
 		},
-		[flush, fail],
+		[flush, fail, isMobile],
 	);
 
 	const toggleFolder = useCallback((path: string): void => {
@@ -191,6 +201,13 @@ export function App(): React.JSX.Element {
 
 	return (
 		<div className={`layout${sidebarOpen ? "" : " sidebar-hidden"}`}>
+			{sidebarOpen && isMobile && (
+				<div
+					className="sidebar-backdrop"
+					aria-hidden="true"
+					onClick={() => setSidebarOpen(false)}
+				/>
+			)}
 			{sidebarOpen && (
 				<Sidebar
 					tree={tree}
@@ -205,6 +222,7 @@ export function App(): React.JSX.Element {
 					onNewNote={(f) => void newNote(f)}
 					onNewFolder={(f) => void newFolder(f)}
 					onCycleTheme={cycle}
+					onClose={isMobile ? () => setSidebarOpen(false) : undefined}
 				/>
 			)}
 			<main className="main">
@@ -228,6 +246,7 @@ export function App(): React.JSX.Element {
 						onChange={onEditorChange}
 						onClose={() => void closeNote()}
 						onToggleFocus={() => setSidebarOpen((v) => !v)}
+						mobile={isMobile}
 					/>
 				) : (
 					<div className="placeholder">
