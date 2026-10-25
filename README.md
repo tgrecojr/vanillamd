@@ -3,7 +3,6 @@
 Simple, no-fuss note taking. A WYSIWYG editor that stores everything as plain
 Markdown files on disk, with folders for organization and autosave. No database,
 no linking, no calendars — just notes.
-
 - **WYSIWYG editing** powered by [Milkdown](https://milkdown.dev) (the editor's
   source of truth _is_ Markdown, so there's no lossy conversion).
 - **Files on disk.** Every note is a real `.md` file; every folder is a real
@@ -26,7 +25,6 @@ handles identity. Do not expose the container port directly to the internet.
 
 Even as a single-user app, it is hardened against the mistakes that matter for a
 file-backed service:
-
 - All client-supplied paths are validated (no `..`, no absolute paths, no null
   bytes / control chars, no path separators inside names) and re-checked for
   containment after resolution.
