@@ -71,9 +71,14 @@ Copy it to `.env` for local dev (`.env` is gitignored; never commit it).
 
 ## Dependency notes
 
-- `katex` is a root `dependencies` entry even though only Milkdown Crepe uses
-  it. The root `overrides.katex` is `$katex`, which npm only resolves against
-  root dependencies. This keeps one katex copy (micromark-extension-math still
-  pins ^0.16) and lets Renovate bump katex as a normal dependency. Bumping the
-  override range directly made Renovate emit a lockfile with katex missing
-  entirely (PR #40).
+- Every root `overrides` entry must be a `$name` reference to a root dependency
+  (`katex` → `$katex` in `dependencies`, `postcss` → `$postcss` and `dompurify` →
+  `$dompurify` in `devDependencies`), never a plain range. npm resolves `$name`
+  against root devDependencies, optionalDependencies, dependencies, then
+  peerDependencies (not workspace deps). Renovate then bumps the package as a
+  normal dependency. A plain-range override breaks Renovate two ways: bumping
+  the range emitted a lockfile with katex missing entirely (PR #40), and a
+  lockfile-only bump that fits the range fails with npm `EOVERRIDE` ("conflicts
+  with direct dependency"), shipping a PR whose lockfile is out of sync (PR #56).
+  katex stays in `dependencies` because micromark-extension-math still pins
+  ^0.16 and one copy must win.
