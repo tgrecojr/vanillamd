@@ -82,3 +82,8 @@ Copy it to `.env` for local dev (`.env` is gitignored; never commit it).
   with direct dependency"), shipping a PR whose lockfile is out of sync (PR #56).
   katex stays in `dependencies` because micromark-extension-math still pins
   ^0.16 and one copy must win.
+- `glob` is a root dependency + `$glob` override for the same reason:
+  `@fastify/static` 10.x pins glob ^13, whose minimatch 10 carries open
+  advisories (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249, 2026-10-30), and
+  Dependabot refuses to cross a parent's range. Drop both once
+  `@fastify/static` accepts glob >=14 or stops depending on glob.
