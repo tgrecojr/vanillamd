@@ -94,3 +94,11 @@ See [`env.example`](./env.example). All have working defaults.
   shrinks the editor rather than covering the toolbar.
 
 One container runs the server, which both serves the API and the static client.
+
+## Contributing
+
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+## License
+
+Released under the [MIT License](LICENSE).
